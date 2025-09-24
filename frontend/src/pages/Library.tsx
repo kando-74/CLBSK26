@@ -1,12 +1,16 @@
 import { useMemo, useState } from 'react'
 import {
   BookmarkCheck,
+  Download,
   Filter,
   Globe,
+  Loader2,
   Search,
   Star,
   Users,
 } from 'lucide-react'
+import type { BggSearchResult } from '../utils/bgg'
+import { getBoardGameDetails, searchBoardGames } from '../utils/bgg'
 
 interface GameEntry {
   id: number
@@ -20,7 +24,7 @@ interface GameEntry {
   manual?: boolean
 }
 
-const library: GameEntry[] = [
+const initialLibrary: GameEntry[] = [
   {
     id: 1,
     title: 'Heat: Pedal to the Metal',
@@ -30,6 +34,7 @@ const library: GameEntry[] = [
     weight: '2.3',
     language: 'ES',
     mechanics: ['Carreras', 'Gestión de mano'],
+    manual: true,
   },
   {
     id: 2,
@@ -40,6 +45,7 @@ const library: GameEntry[] = [
     weight: '2.0',
     language: 'EN',
     mechanics: ['Cooperativo', 'Tiradas ocultas'],
+    manual: true,
   },
   {
     id: 3,
@@ -50,6 +56,7 @@ const library: GameEntry[] = [
     weight: '3.6',
     language: 'ES',
     mechanics: ['Economía', 'Construcción'],
+    manual: true,
   },
   {
     id: 4,
@@ -60,6 +67,7 @@ const library: GameEntry[] = [
     weight: '1.9',
     language: 'FR',
     mechanics: ['Puzzle', 'Draft'],
+    manual: true,
   },
 ]
 
@@ -67,19 +75,150 @@ const presetFilters = ['Favoritos', 'Novedades', 'Familiares <45 min']
 
 export function Library() {
   const [search, setSearch] = useState('')
+  const [games, setGames] = useState<GameEntry[]>(initialLibrary)
+  const [bggQuery, setBggQuery] = useState('')
+  const [bggResults, setBggResults] = useState<BggSearchResult[]>([])
+  const [isSearchingBgg, setIsSearchingBgg] = useState(false)
+  const [bggError, setBggError] = useState<string | null>(null)
+  const [importingId, setImportingId] = useState<number | null>(null)
+  const [importMessage, setImportMessage] = useState<
+    { type: 'success' | 'error'; message: string } | null
+  >(null)
 
   const filtered = useMemo(() => {
     const term = search.toLowerCase().trim()
 
     if (!term) {
-      return library
+      return games
     }
 
-    return library.filter((item) => {
+    return games.filter((item) => {
       const haystack = `${item.title} ${item.owner} ${item.mechanics.join(' ')}`.toLowerCase()
       return haystack.includes(term)
     })
-  }, [search])
+  }, [games, search])
+
+  async function handleBggSearch() {
+    const query = bggQuery.trim()
+
+    if (query.length < 2) {
+      setBggError('Introduce al menos 2 caracteres para buscar en BGG.')
+      setBggResults([])
+      return
+    }
+
+    setBggError(null)
+    setImportMessage(null)
+    setIsSearchingBgg(true)
+
+    try {
+      const results = await searchBoardGames(query)
+      setBggResults(results.slice(0, 10))
+
+      if (results.length === 0) {
+        setBggError('No se encontraron juegos en BGG para esa búsqueda.')
+      }
+    } catch (error) {
+      setBggResults([])
+      setBggError(
+        error instanceof Error
+          ? error.message
+          : 'No se pudo completar la búsqueda en BGG.',
+      )
+    } finally {
+      setIsSearchingBgg(false)
+    }
+  }
+
+  async function handleImport(id: number) {
+    setImportMessage(null)
+    setImportingId(id)
+
+    try {
+      const details = await getBoardGameDetails(id)
+      let wasDuplicate = false
+
+      setGames((current) => {
+        if (current.some((item) => item.id === details.id)) {
+          wasDuplicate = true
+          return current
+        }
+
+        const playersLabel = (() => {
+          if (details.minPlayers && details.maxPlayers) {
+            if (details.minPlayers === details.maxPlayers) {
+              return `${details.minPlayers}`
+            }
+            return `${details.minPlayers}-${details.maxPlayers}`
+          }
+
+          if (details.minPlayers) {
+            return `${details.minPlayers}+`
+          }
+
+          return 'N/D'
+        })()
+
+        const durationLabel = (() => {
+          const minTime = details.minPlaytime ?? details.playingTime
+          const maxTime = details.maxPlaytime ?? details.playingTime
+
+          if (minTime && maxTime) {
+            if (minTime === maxTime) {
+              return `${minTime} min`
+            }
+
+            return `${minTime}-${maxTime} min`
+          }
+
+          if (maxTime) {
+            return `${maxTime} min`
+          }
+
+          return 'N/D'
+        })()
+
+        const mechanics =
+          details.mechanics.length > 0
+            ? details.mechanics.slice(0, 8)
+            : ['Sin datos BGG']
+
+        const weightLabel =
+          details.averageWeight && details.averageWeight > 0
+            ? details.averageWeight.toFixed(1)
+            : 'N/D'
+
+        const entry: GameEntry = {
+          id: details.id,
+          title: details.name,
+          owner: 'Importado',
+          players: playersLabel,
+          duration: durationLabel,
+          weight: weightLabel,
+          language: 'BGG',
+          mechanics,
+        }
+
+        const next = [...current, entry]
+        next.sort((a, b) => a.title.localeCompare(b.title, 'es', { sensitivity: 'base' }))
+        return next
+      })
+
+      if (wasDuplicate) {
+        setImportMessage({ type: 'error', message: 'El juego ya está en la ludoteca.' })
+      } else {
+        setImportMessage({ type: 'success', message: 'Juego importado correctamente desde BGG.' })
+      }
+    } catch (error) {
+      setImportMessage({
+        type: 'error',
+        message:
+          error instanceof Error ? error.message : 'No se pudo importar el juego desde BGG.',
+      })
+    } finally {
+      setImportingId(null)
+    }
+  }
 
   return (
     <div className="space-y-6 pb-10">
@@ -129,6 +268,99 @@ export function Library() {
             <BookmarkCheck className="h-4 w-4" />
             Guardar filtro
           </button>
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-text-secondary">
+          Importar desde BoardGameGeek
+        </h3>
+        <div className="card space-y-4 p-5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center">
+            <label className="flex grow items-center gap-3 rounded-xl bg-background px-4 py-2">
+              <Search className="h-5 w-5 text-text-secondary" />
+              <input
+                value={bggQuery}
+                onChange={(event) => setBggQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    void handleBggSearch()
+                  }
+                }}
+                placeholder="Buscar juego en BGG (ej. Catan, Ark Nova)"
+                className="w-full bg-transparent text-sm text-text-primary outline-none placeholder:text-text-secondary"
+              />
+            </label>
+            <button
+              onClick={() => void handleBggSearch()}
+              disabled={isSearchingBgg}
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/60"
+            >
+              {isSearchingBgg ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Buscando...
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4" />
+                  Buscar en BGG
+                </>
+              )}
+            </button>
+          </div>
+          {bggError && <p className="text-sm text-red-500">{bggError}</p>}
+          {importMessage && (
+            <p
+              className={`text-sm ${
+                importMessage.type === 'success' ? 'text-emerald-600' : 'text-red-500'
+              }`}
+            >
+              {importMessage.message}
+            </p>
+          )}
+          {bggResults.length > 0 && (
+            <div className="space-y-2">
+              {bggResults.map((result) => {
+                const alreadyImported = games.some((game) => game.id === result.id)
+
+                return (
+                  <div
+                    key={result.id}
+                    className="flex flex-col gap-2 rounded-xl bg-background px-4 py-3 text-sm text-text-secondary md:flex-row md:items-center md:justify-between"
+                  >
+                    <div>
+                      <p className="font-semibold text-text-primary">{result.name}</p>
+                      <p className="text-xs text-text-secondary">
+                        BGG #{result.id}
+                        {result.yearPublished ? ` • Año ${result.yearPublished}` : ''}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => void handleImport(result.id)}
+                      disabled={alreadyImported || importingId === result.id}
+                      className="inline-flex items-center justify-center gap-2 rounded-full border border-primary px-3 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:border-primary/40 disabled:text-primary/60"
+                    >
+                      {importingId === result.id ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Importando...
+                        </>
+                      ) : alreadyImported ? (
+                        'Ya importado'
+                      ) : (
+                        <>
+                          <Download className="h-4 w-4" />
+                          Importar juego
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       </section>
 

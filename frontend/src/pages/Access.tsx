@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import type { FormEvent, JSX } from 'react'
 import { Link } from 'react-router-dom'
 import { clsx } from 'clsx'
 import {
