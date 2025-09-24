@@ -1,5 +1,6 @@
 import { clsx } from 'clsx'
 import {
+  BarChart3,
   CalendarDays,
   Clock4,
   LibraryBig,
@@ -9,6 +10,7 @@ import {
   Trophy,
   Users,
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { getCurrentCongressDay, formatHour } from '../utils/date'
 
 const quickActions = [
@@ -32,6 +34,13 @@ const quickActions = [
     icon: Megaphone,
     to: '/tablon',
     accent: 'bg-primary/5 text-text-secondary',
+  },
+  {
+    label: 'Ver estadísticas',
+    description: 'Consulta métricas globales y tu progreso personal del evento.',
+    icon: BarChart3,
+    to: '/estadisticas',
+    accent: 'bg-primary/5 text-primary',
   },
 ]
 
@@ -113,6 +122,13 @@ export function Home() {
             <p className="mt-3 max-w-xl text-base text-white/80">
               Consulta de un vistazo las partidas de hoy, las mesas abiertas y los próximos anuncios de la organización.
             </p>
+            <Link
+              to="/estadisticas"
+              className="mt-4 inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/20"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Abrir panel de estadísticas
+            </Link>
           </div>
           <div className="grid grid-cols-3 gap-3 md:gap-6">
             {statsHighlights.map((item) => (
@@ -136,15 +152,15 @@ export function Home() {
       <section className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="section-title">Acciones rápidas</h2>
-          <a className="text-sm font-semibold text-primary" href="#">
-            Ver todas
-          </a>
+          <Link className="text-sm font-semibold text-primary" to="/estadisticas">
+            Ver panel de estadísticas
+          </Link>
         </div>
         <div className="grid gap-4 md:grid-cols-3">
           {quickActions.map((action) => (
-            <a
+            <Link
               key={action.label}
-              href={action.to}
+              to={action.to}
               className="card group flex flex-col gap-3 p-5 transition-transform hover:-translate-y-1"
             >
               <div
@@ -161,7 +177,7 @@ export function Home() {
                 Ir ahora
                 <Share2 className="h-4 w-4" />
               </span>
-            </a>
+            </Link>
           ))}
         </div>
       </section>

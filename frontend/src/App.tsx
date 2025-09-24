@@ -5,6 +5,7 @@ import { Library } from './pages/Library'
 import { Register } from './pages/Register'
 import { Board } from './pages/Board'
 import { Profile } from './pages/Profile'
+import { Statistics } from './pages/Statistics'
 
 function App() {
   return (
@@ -14,6 +15,7 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/ludoteca" element={<Library />} />
           <Route path="/registrar" element={<Register />} />
+          <Route path="/estadisticas" element={<Statistics />} />
           <Route path="/tablon" element={<Board />} />
           <Route path="/perfil" element={<Profile />} />
           <Route path="*" element={<Navigate to="/" replace />} />
