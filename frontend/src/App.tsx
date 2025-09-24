@@ -6,11 +6,13 @@ import { Register } from './pages/Register'
 import { Board } from './pages/Board'
 import { Profile } from './pages/Profile'
 import { Statistics } from './pages/Statistics'
+import { Access } from './pages/Access'
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/acceso" element={<Access />} />
         <Route element={<AppShell />}>
           <Route path="/" element={<Home />} />
           <Route path="/ludoteca" element={<Library />} />
