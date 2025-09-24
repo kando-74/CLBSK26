@@ -52,9 +52,12 @@ export function AppShell() {
                 <CalendarDays className="h-4 w-4" />
                 Día actual
               </span>
-              <button className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90">
+              <Link
+                to="/organizacion"
+                className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
+              >
                 Abrir panel org.
-              </button>
+              </Link>
             </div>
           </div>
         </header>

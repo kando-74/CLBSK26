@@ -1,4 +1,5 @@
 import { Languages, LogOut, ShieldCheck, UserCog } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 export function Profile() {
   return (
@@ -89,10 +90,13 @@ export function Profile() {
       <section className="card space-y-4 p-6">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-text-primary">Panel de organización</h3>
-          <button className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90">
+          <Link
+            to="/organizacion"
+            className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
+          >
             <UserCog className="h-4 w-4" />
             Abrir dashboard
-          </button>
+          </Link>
         </div>
         <div className="grid gap-4 md:grid-cols-3">
           <div className="rounded-2xl bg-background px-4 py-3">
