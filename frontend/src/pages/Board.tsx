@@ -1,4 +1,5 @@
 import { CalendarCheck, Clock, MapPin, Plus } from 'lucide-react'
+import { GameTitle } from '../components/GameTitle'
 
 const openTables = [
   {
@@ -59,10 +60,17 @@ export function Board() {
         {openTables.map((table) => (
           <article key={table.id} className="card space-y-4 p-5">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
+              <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wide text-text-secondary">Juego</p>
-                <h3 className="text-xl font-semibold text-text-primary">{table.game}</h3>
-                <p className="text-sm text-text-secondary">Anfitrión: {table.host}</p>
+                <GameTitle
+                  name={table.game}
+                  size="md"
+                  textClassName="text-xl"
+                  role="heading"
+                  aria-level={3}
+                >
+                  <p className="text-sm font-normal text-text-secondary">Anfitrión: {table.host}</p>
+                </GameTitle>
               </div>
               <div className="flex items-center gap-3">
                 <span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">

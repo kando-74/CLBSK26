@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { ArrowDownToLine, BarChart3, LineChart, Timer, Trophy, Users } from 'lucide-react'
 import { clsx } from 'clsx'
 import { getCurrentCongressDay } from '../utils/date'
+import { GameTitle } from '../components/GameTitle'
 
 type StatsTab = 'global' | 'personal'
 
@@ -283,8 +284,12 @@ export function Statistics() {
             <div className="grid gap-4 md:grid-cols-3">
               {topGames.map((game) => (
                 <div key={game.title} className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
-                  <p className="text-base font-semibold text-text-primary">{game.title}</p>
-                  <p>{game.plays} partidas registradas</p>
+                  <GameTitle
+                    name={game.title}
+                    size="sm"
+                    textClassName="text-base"
+                  />
+                  <p className="mt-2">{game.plays} partidas registradas</p>
                   <p>{game.players} jugadores únicos</p>
                   <p>Tiempo acumulado: {game.time}</p>
                 </div>

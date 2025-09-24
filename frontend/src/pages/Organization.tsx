@@ -18,6 +18,7 @@ import {
   Users,
 } from 'lucide-react'
 import { getCurrentCongressDay } from '../utils/date'
+import { GameTitle } from '../components/GameTitle'
 
 type PanelTab = 'attendees' | 'whitelist' | 'duplicates' | 'exports'
 
@@ -457,12 +458,18 @@ export function Organization() {
               return (
                 <article key={duplicate.id} className="rounded-2xl border border-slate-200/60 bg-surface p-4">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <h3 className="text-lg font-semibold text-text-primary">{duplicate.game}</h3>
-                      <p className="text-sm text-text-secondary">
+                    <GameTitle
+                      name={duplicate.game}
+                      size="sm"
+                      textClassName="text-lg"
+                      className="items-start"
+                      role="heading"
+                      aria-level={3}
+                    >
+                      <p className="text-sm font-normal text-text-secondary">
                         {duplicate.players.join(', ')} · Coincidencia {duplicate.similarity}%
                       </p>
-                    </div>
+                    </GameTitle>
                     <div className="flex flex-wrap gap-2">
                       <span
                         className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${statusStyles.className}`}

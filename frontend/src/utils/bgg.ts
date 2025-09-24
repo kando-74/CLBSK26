@@ -69,6 +69,10 @@ function getAttribute(element: Element | null, attribute: string) {
   return element?.getAttribute(attribute) ?? undefined
 }
 
+function getTextContent(element: Element | null) {
+  return element?.textContent ?? undefined
+}
+
 export interface BggSearchResult {
   id: number
   name: string
@@ -86,6 +90,8 @@ export interface BggGameDetails {
   playingTime?: number
   averageWeight?: number
   mechanics: string[]
+  thumbnailUrl?: string
+  imageUrl?: string
 }
 
 export async function searchBoardGames(query: string): Promise<BggSearchResult[]> {
@@ -149,5 +155,7 @@ export async function getBoardGameDetails(id: number): Promise<BggGameDetails> {
     playingTime: playingTime || undefined,
     averageWeight: averageWeight || undefined,
     mechanics,
+    thumbnailUrl: getTextContent(item.querySelector('thumbnail')) ?? undefined,
+    imageUrl: getTextContent(item.querySelector('image')) ?? undefined,
   }
 }
