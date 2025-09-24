@@ -70,6 +70,12 @@ App orientada a asistentes de un congreso específico de juegos de mesa. Objetiv
 ### 5.1 Registro y acceso (whitelist)
 
 * La organización sube una **lista de emails autorizados**.
+  * **Lista blanca inicial** (Fase 0):
+    * ulises1002048@gmail.com
+    * patricio1002048@gmail.com
+    * tomas1002048@gmail.com
+    * saul1002048@gmail.com
+  * **Administrador inicial**: alejandro.martin.millan@gmail.com (permisos completos, incluida la edición de la whitelist).
 * Autenticación por email (u otros proveedores, opcional) **validando pertenencia a la lista**.
 * Campo perfil de usuario: alias, nombre visible, avatar (opcional), preferencia de idioma, consentimiento RGPD.
 
@@ -85,6 +91,7 @@ App orientada a asistentes de un congreso específico de juegos de mesa. Objetiv
 * **Enriquecimiento BGG**: título, autores, editorial, año, nº jugadores, duración, “weight”, portada, id BGG, etiquetas/temas/ mecánicas.
 * **Propietario** (usuario que lo lleva) + **cantidad** (si lleva varias copias) + observaciones (idioma del juego, edición, estado componentes).
 * **Filtros**: propietario, nº jugadores, duración, autor, editorial, año, peso, idioma, nombre.
+* Durante la Fase 0, el **catálogo inicial** será introducido por la propia organización/asistentes según avancen las pruebas internas.
 
 **Criterios de aceptación**
 
