@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import type { BggSearchResult } from '../utils/bgg'
 import { getBoardGameDetails, searchBoardGames } from '../utils/bgg'
+import { GameTitle } from '../components/GameTitle'
 
 interface GameEntry {
   id: number
@@ -22,6 +23,7 @@ interface GameEntry {
   language: string
   mechanics: string[]
   manual?: boolean
+  coverUrl?: string
 }
 
 const initialLibrary: GameEntry[] = [
@@ -35,6 +37,7 @@ const initialLibrary: GameEntry[] = [
     language: 'ES',
     mechanics: ['Carreras', 'Gestión de mano'],
     manual: true,
+    coverUrl: '/covers/heat-pedal-to-the-metal.svg',
   },
   {
     id: 2,
@@ -46,6 +49,7 @@ const initialLibrary: GameEntry[] = [
     language: 'EN',
     mechanics: ['Cooperativo', 'Tiradas ocultas'],
     manual: true,
+    coverUrl: '/covers/sky-team.svg',
   },
   {
     id: 3,
@@ -57,6 +61,7 @@ const initialLibrary: GameEntry[] = [
     language: 'ES',
     mechanics: ['Economía', 'Construcción'],
     manual: true,
+    coverUrl: '/covers/kutna-hora.svg',
   },
   {
     id: 4,
@@ -68,6 +73,7 @@ const initialLibrary: GameEntry[] = [
     language: 'FR',
     mechanics: ['Puzzle', 'Draft'],
     manual: true,
+    coverUrl: '/covers/akropolis.svg',
   },
 ]
 
@@ -197,6 +203,7 @@ export function Library() {
           weight: weightLabel,
           language: 'BGG',
           mechanics,
+          coverUrl: details.imageUrl ?? details.thumbnailUrl,
         }
 
         const next = [...current, entry]
@@ -330,8 +337,12 @@ export function Library() {
                     key={result.id}
                     className="flex flex-col gap-2 rounded-xl bg-background px-4 py-3 text-sm text-text-secondary md:flex-row md:items-center md:justify-between"
                   >
-                    <div>
-                      <p className="font-semibold text-text-primary">{result.name}</p>
+                    <div className="space-y-1">
+                      <GameTitle
+                        name={result.name}
+                        size="sm"
+                        textClassName="text-sm"
+                      />
                       <p className="text-xs text-text-secondary">
                         BGG #{result.id}
                         {result.yearPublished ? ` • Año ${result.yearPublished}` : ''}
@@ -367,11 +378,18 @@ export function Library() {
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {filtered.map((game) => (
           <article key={game.id} className="card flex flex-col gap-4 p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-text-primary">{game.title}</h3>
-                <p className="text-sm text-text-secondary">Propietario: {game.owner}</p>
-              </div>
+            <div className="flex items-start justify-between gap-4">
+              <GameTitle
+                name={game.title}
+                coverUrl={game.coverUrl}
+                size="lg"
+                className="items-start"
+                textClassName="text-xl"
+                role="heading"
+                aria-level={3}
+              >
+                <p className="text-sm font-normal text-text-secondary">Propietario: {game.owner}</p>
+              </GameTitle>
               {game.manual ? (
                 <span className="rounded-full bg-secondary/10 px-3 py-1 text-xs font-semibold text-secondary">Manual</span>
               ) : (

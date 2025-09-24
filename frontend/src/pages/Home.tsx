@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { getCurrentCongressDay, formatHour } from '../utils/date'
+import { GameTitle } from '../components/GameTitle'
 
 const quickActions = [
   {
@@ -195,7 +196,13 @@ export function Home() {
             {recentPlays.map((play) => (
               <article key={play.id} className="card flex items-start justify-between gap-4 p-5">
                 <div className="space-y-2">
-                  <h3 className="text-lg font-semibold text-text-primary">{play.game}</h3>
+                  <GameTitle
+                    name={play.game}
+                    size="sm"
+                    textClassName="text-lg"
+                    role="heading"
+                    aria-level={3}
+                  />
                   <div className="flex flex-wrap gap-2 text-sm text-text-secondary">
                     {play.players.map((player) => (
                       <span key={player} className="rounded-full bg-background px-3 py-1">
