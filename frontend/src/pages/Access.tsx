@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent, JSX } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { clsx } from 'clsx'
 import {
   ArrowLeft,
@@ -13,14 +13,12 @@ import {
   Sparkles,
   UserRound,
 } from 'lucide-react'
-
-const AUTHORIZED_EMAILS = [
-  'ulises1002048@gmail.com',
-  'patricio1002048@gmail.com',
-  'tomas1002048@gmail.com',
-  'saul1002048@gmail.com',
-  'alejandro.martin.millan@gmail.com',
-].map((email) => email.toLowerCase())
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth'
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
+import type { DocumentData } from 'firebase/firestore'
+import type { FirebaseError } from 'firebase/app'
+import { auth, db } from '../utils/firebase'
+import { useAuth } from '../components/AuthProvider'
 
 const onboardingSteps = [
   {
@@ -50,47 +48,144 @@ type LanguageOption = 'es' | 'en'
 
 type VerificationStatus = 'idle' | 'checking' | 'success' | 'error'
 
+type AuthorizedEntry = {
+  email: string
+  role?: string
+  displayName?: string
+}
+
 const SUPPORT_EMAIL = 'soporte@juegoscongreso.com'
 
 export function Access() {
+  const navigate = useNavigate()
+  const { user, profile } = useAuth()
+
   const [currentStep, setCurrentStep] = useState<StepKey>('welcome')
-  const [email, setEmail] = useState('ulises1002048@gmail.com')
-  const [password, setPassword] = useState('congreso2025')
-  const [alias, setAlias] = useState('Ulises')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [alias, setAlias] = useState('')
   const [fullName, setFullName] = useState('')
   const [language, setLanguage] = useState<LanguageOption>('es')
   const [consent, setConsent] = useState(false)
   const [showLoginErrors, setShowLoginErrors] = useState(false)
   const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>('idle')
   const [verificationAttempt, setVerificationAttempt] = useState(0)
+  const [verificationError, setVerificationError] = useState<string | null>(null)
   const [profileSaved, setProfileSaved] = useState(false)
+  const [profileError, setProfileError] = useState<string | null>(null)
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [authorizedEntry, setAuthorizedEntry] = useState<AuthorizedEntry | null>(null)
+  const [profilePrefilled, setProfilePrefilled] = useState(false)
 
   const activeIndex = onboardingSteps.findIndex((step) => step.key === currentStep)
   const activeStep = onboardingSteps[activeIndex]
   const progress = ((activeIndex + 1) / onboardingSteps.length) * 100
 
+  const normalizedEmail = useMemo(() => email.trim().toLowerCase(), [email])
   const isEmailValid = useMemo(() => /.+@.+\..+/.test(email), [email])
   const isPasswordValid = password.trim().length >= 8
   const canSubmitLogin = isEmailValid && isPasswordValid
   const isAliasValid = alias.trim().length >= 2
-  const canFinishProfile = isAliasValid && consent
+  const canFinishProfile = isAliasValid && consent && !savingProfile
+
+  useEffect(() => {
+    if (user?.email && currentStep === 'welcome') {
+      setEmail(user.email)
+      setCurrentStep('profile')
+    }
+  }, [currentStep, user])
 
   useEffect(() => {
     if (currentStep !== 'verification') {
       return
     }
 
-    setVerificationStatus('checking')
-    const normalizedEmail = email.trim().toLowerCase()
-    const timeout = setTimeout(() => {
-      const isAuthorized = AUTHORIZED_EMAILS.includes(normalizedEmail)
-      setVerificationStatus(isAuthorized ? 'success' : 'error')
-    }, 1200)
+    let cancelled = false
+
+    async function verifyWhitelist() {
+      setVerificationStatus('checking')
+      setVerificationError(null)
+
+      try {
+        if (!canSubmitLogin) {
+          throw new Error('Revisa el correo y la contraseña antes de continuar.')
+        }
+
+        const whitelistRef = doc(db, 'authorizedEmails', normalizedEmail)
+        const whitelistSnap = await getDoc(whitelistRef)
+
+        if (!whitelistSnap.exists()) {
+          throw new Error('Tu correo no forma parte de la whitelist habilitada para el evento.')
+        }
+
+        const whitelistData = whitelistSnap.data()
+        const entry = mapAuthorizedEntry(normalizedEmail, whitelistData)
+
+        if (!cancelled) {
+          setAuthorizedEntry(entry)
+        }
+
+        let currentUser = auth.currentUser
+        const isDifferentUser = currentUser?.email?.toLowerCase() !== normalizedEmail
+
+        if (!currentUser || isDifferentUser) {
+          try {
+            const { user: signedUser } = await signInWithEmailAndPassword(auth, normalizedEmail, password)
+            currentUser = signedUser
+          } catch (error) {
+            const mapped = mapAuthError(error)
+            if (mapped.code === 'auth/user-not-found') {
+              const { user: createdUser } = await createUserWithEmailAndPassword(auth, normalizedEmail, password)
+              currentUser = createdUser
+            } else {
+              throw new Error(mapped.message)
+            }
+          }
+        }
+
+        if (!currentUser) {
+          throw new Error('No se pudo establecer tu sesión. Intenta de nuevo en unos segundos.')
+        }
+
+        const profileRef = doc(db, 'users', currentUser.uid)
+        const profileSnap = await getDoc(profileRef)
+
+        if (!cancelled) {
+          if (profileSnap.exists()) {
+            const data = profileSnap.data()
+            setAlias((prev) => prev || data.alias || entry.displayName || normalizedEmail.split('@')[0])
+            setFullName(data.fullName ?? '')
+            setLanguage((data.language as LanguageOption | undefined) ?? 'es')
+            setConsent(Boolean(data.consentAt))
+          } else {
+            setAlias((prev) => prev || entry.displayName || normalizedEmail.split('@')[0])
+            setFullName('')
+            setConsent(false)
+          }
+
+          setProfilePrefilled(false)
+          setVerificationStatus('success')
+          setCurrentStep('profile')
+        }
+      } catch (error) {
+        if (cancelled) {
+          return
+        }
+
+        setVerificationStatus('error')
+        setVerificationError(error instanceof Error ? error.message : 'No se pudo validar tu acceso. Intenta nuevamente.')
+        if (auth.currentUser && auth.currentUser.email?.toLowerCase() !== normalizedEmail) {
+          signOut(auth).catch(() => undefined)
+        }
+      }
+    }
+
+    verifyWhitelist()
 
     return () => {
-      clearTimeout(timeout)
+      cancelled = true
     }
-  }, [currentStep, email, verificationAttempt])
+  }, [canSubmitLogin, currentStep, normalizedEmail, password, verificationAttempt])
 
   useEffect(() => {
     if (showLoginErrors && canSubmitLogin) {
@@ -101,8 +196,31 @@ export function Access() {
   useEffect(() => {
     if (currentStep !== 'profile') {
       setProfileSaved(false)
+      setProfilePrefilled(false)
+      return
     }
-  }, [currentStep])
+
+    if (profilePrefilled) {
+      return
+    }
+
+    if (profile) {
+      setAlias((prev) => (prev ? prev : profile.alias ?? authorizedEntry?.displayName ?? normalizedEmail.split('@')[0]))
+      setFullName(profile.fullName ?? '')
+      setLanguage((profile.language as LanguageOption | undefined) ?? 'es')
+      setConsent(Boolean(profile.consentAt))
+      setProfilePrefilled(true)
+      return
+    }
+
+    if (authorizedEntry?.displayName) {
+      setAlias((prev) => prev || authorizedEntry.displayName || '')
+    } else if (normalizedEmail) {
+      setAlias((prev) => prev || normalizedEmail.split('@')[0])
+    }
+
+    setProfilePrefilled(true)
+  }, [authorizedEntry, currentStep, normalizedEmail, profile, profilePrefilled])
 
   useEffect(() => {
     setProfileSaved(false)
@@ -126,25 +244,49 @@ export function Access() {
 
   const handleRetryVerification = () => {
     setVerificationAttempt((attempt) => attempt + 1)
+    setVerificationStatus('idle')
   }
 
   const handleBackToLogin = () => {
     setVerificationStatus('idle')
+    setVerificationError(null)
+    signOut(auth).catch(() => undefined)
     setCurrentStep('login')
   }
 
-  const handleGoToProfile = () => {
-    setCurrentStep('profile')
-  }
-
-  const handleProfileSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleProfileSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
-    if (!canFinishProfile) {
+    if (!canFinishProfile || !auth.currentUser) {
       return
     }
 
-    setProfileSaved(true)
+    setSavingProfile(true)
+    setProfileError(null)
+
+    try {
+      const profileRef = doc(db, 'users', auth.currentUser.uid)
+      await setDoc(
+        profileRef,
+        {
+          alias: alias.trim(),
+          fullName: fullName.trim() || null,
+          language,
+          bio: profile?.bio ?? null,
+          consentAt: consent ? serverTimestamp() : null,
+          role: authorizedEntry?.role ?? profile?.role ?? null,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      )
+
+      setProfileSaved(true)
+      navigate('/')
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : 'No se pudo guardar el perfil. Vuelve a intentarlo más tarde.')
+    } finally {
+      setSavingProfile(false)
+    }
   }
 
   let mainContent: JSX.Element
@@ -191,10 +333,7 @@ export function Access() {
               Comenzar acceso
               <ArrowRight className="h-4 w-4" />
             </button>
-            <a
-              href={`mailto:${SUPPORT_EMAIL}`}
-              className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
-            >
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline">
               <MailCheck className="h-4 w-4" />
               ¿Necesitas ayuda? Escríbenos
             </a>
@@ -204,214 +343,185 @@ export function Access() {
       break
     case 'login':
       mainContent = (
-        <form onSubmit={handleLoginSubmit} className="space-y-5">
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
-              <span className="text-xs uppercase tracking-wide">Correo electrónico</span>
-              <input
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                className="mt-1 w-full bg-transparent text-base text-text-primary outline-none"
-                placeholder="usuario@juegoscongreso.com"
-                required
-              />
-            </label>
-            <label className="rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
-              <span className="text-xs uppercase tracking-wide">Contraseña</span>
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                className="mt-1 w-full bg-transparent text-base text-text-primary outline-none"
-                placeholder="Mínimo 8 caracteres"
-                required
-              />
-            </label>
+        <form onSubmit={handleLoginSubmit} className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-text-primary">Correo autorizado</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              className={clsx(
+                'w-full rounded-2xl border bg-background px-4 py-3 text-sm outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20',
+                showLoginErrors && !isEmailValid ? 'border-error text-error' : 'border-slate-200 text-text-primary',
+              )}
+              placeholder="tucorreo@organizacion.com"
+              autoComplete="email"
+              required
+            />
+            {showLoginErrors && !isEmailValid && <p className="text-sm text-error">Introduce un correo válido.</p>}
           </div>
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-text-primary">Contraseña</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className={clsx(
+                'w-full rounded-2xl border bg-background px-4 py-3 text-sm outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20',
+                showLoginErrors && !isPasswordValid ? 'border-error text-error' : 'border-slate-200 text-text-primary',
+              )}
+              placeholder="Mínimo 8 caracteres"
+              autoComplete="current-password"
+              required
+            />
+            {showLoginErrors && !isPasswordValid && (
+              <p className="text-sm text-error">La contraseña debe tener al menos 8 caracteres.</p>
+            )}
+          </div>
+          <button
+            type="submit"
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
+          >
+            Continuar
+            <ArrowRight className="h-4 w-4" />
+          </button>
           <p className="text-xs text-text-secondary">
-            Por seguridad, evitamos contraseñas comunes. Puedes cambiarla después desde tu perfil.
+            Si todavía no tienes credenciales, solicita el alta a la organización del congreso.
           </p>
-          {showLoginErrors && !canSubmitLogin && (
-            <div className="rounded-2xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
-              Revisa el formato del correo e introduce una contraseña con al menos 8 caracteres.
-            </div>
-          )}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <button
-              type="button"
-              onClick={() => setCurrentStep('welcome')}
-              className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-text-secondary transition-colors hover:bg-primary/10 hover:text-primary"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Volver a la bienvenida
-            </button>
-            <button
-              type="submit"
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
-              disabled={!canSubmitLogin}
-            >
-              Continuar con whitelist
-              <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
         </form>
       )
       break
     case 'verification':
       mainContent = (
-        <div className="space-y-5" aria-live="polite">
-          {verificationStatus === 'checking' && (
-            <div className="flex items-start gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-text-secondary">
-              <Loader2 className="h-5 w-5 animate-spin text-primary" />
-              <div>
-                <p className="font-semibold text-text-primary">Validando whitelist…</p>
-                <p>Estamos comprobando que {email} esté autorizado para el evento.</p>
-              </div>
-            </div>
-          )}
-          {verificationStatus === 'success' && (
-            <div className="flex items-start gap-3 rounded-2xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-success" role="status">
-              <CheckCircle2 className="h-5 w-5" />
-              <div>
-                <p className="font-semibold text-text-primary">¡Acceso concedido!</p>
-                <p className="text-text-secondary">{email} forma parte de la lista autorizada. Puedes completar tu perfil.</p>
-              </div>
-            </div>
-          )}
-          {verificationStatus === 'error' && (
-            <div className="flex items-start gap-3 rounded-2xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error" role="alert">
-              <ShieldAlert className="h-5 w-5" />
-              <div>
-                <p className="font-semibold text-text-primary">Correo no encontrado</p>
-                <p className="text-text-secondary">
-                  No localizamos {email} en la whitelist. Verifica que uses el correo invitado o contacta con la organización.
-                </p>
-              </div>
-            </div>
-          )}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <button
-              type="button"
-              onClick={handleBackToLogin}
-              className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-text-secondary transition-colors hover:bg-primary/10 hover:text-primary"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Cambiar correo
-            </button>
-            {verificationStatus === 'success' ? (
-              <button
-                type="button"
-                onClick={handleGoToProfile}
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
-              >
-                Completar perfil inicial
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleRetryVerification}
-                className="inline-flex items-center justify-center gap-2 rounded-full border border-primary px-5 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
-              >
-                Reintentar verificación
-              </button>
-            )}
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-4 text-sm text-text-secondary">
+            <p className="flex items-center gap-2 text-base font-semibold text-text-primary">
+              {verificationStatus === 'success' ? (
+                <CheckCircle2 className="h-5 w-5 text-secondary" />
+              ) : verificationStatus === 'error' ? (
+                <ShieldAlert className="h-5 w-5 text-error" />
+              ) : (
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              )}
+              Verificando acceso para <span className="font-mono text-primary">{normalizedEmail}</span>
+            </p>
+            <p>
+              {verificationStatus === 'checking' && 'Consultando la whitelist y tus credenciales en Firebase Auth...'}
+              {verificationStatus === 'success' && 'Tu correo está autorizado. Vamos a completar tu perfil inicial.'}
+              {verificationStatus === 'error' && verificationError}
+            </p>
           </div>
+          {verificationStatus === 'error' && (
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <button
+                onClick={handleRetryVerification}
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
+              >
+                Reintentar
+              </button>
+              <button
+                onClick={handleBackToLogin}
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 px-5 py-3 text-sm font-semibold text-text-primary transition-colors hover:bg-background"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Cambiar datos
+              </button>
+            </div>
+          )}
         </div>
       )
       break
     case 'profile':
       mainContent = (
-        <form onSubmit={handleProfileSubmit} className="space-y-5">
+        <form onSubmit={handleProfileSubmit} className="space-y-6">
+          <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-text-secondary">
+            <p className="text-base font-semibold text-text-primary">Datos autorizados</p>
+            <p>
+              <span className="font-medium text-text-primary">Correo:</span> {normalizedEmail || user?.email || 'Pendiente'}
+            </p>
+            {authorizedEntry?.role && (
+              <p>
+                <span className="font-medium text-text-primary">Rol asignado:</span> {authorizedEntry.role}
+              </p>
+            )}
+          </div>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
-              <span className="text-xs uppercase tracking-wide">Alias visible</span>
+              <span className="text-xs uppercase tracking-wide">Alias visible *</span>
               <input
+                className="mt-1 w-full bg-transparent text-base text-text-primary outline-none"
                 value={alias}
                 onChange={(event) => setAlias(event.target.value)}
-                className="mt-1 w-full bg-transparent text-base text-text-primary outline-none"
-                placeholder="Ej. Alex, MeepleHero…"
+                minLength={2}
                 required
               />
             </label>
             <label className="rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
-              <span className="text-xs uppercase tracking-wide">Nombre (opcional)</span>
+              <span className="text-xs uppercase tracking-wide">Nombre completo (opcional)</span>
               <input
+                className="mt-1 w-full bg-transparent text-base text-text-primary outline-none"
                 value={fullName}
                 onChange={(event) => setFullName(event.target.value)}
-                className="mt-1 w-full bg-transparent text-base text-text-primary outline-none"
                 placeholder="Nombre y apellidos"
               />
             </label>
             <label className="rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
               <span className="text-xs uppercase tracking-wide">Idioma preferido</span>
-              <select
-                value={language}
-                onChange={(event) => setLanguage(event.target.value as LanguageOption)}
-                className="mt-1 w-full bg-transparent text-base text-text-primary outline-none"
-              >
-                <option value="es">Español</option>
-                <option value="en">English</option>
-              </select>
+              <div className="mt-1 flex items-center gap-2">
+                <select
+                  className="w-full rounded-xl bg-background px-3 py-2 text-base text-text-primary outline-none"
+                  value={language}
+                  onChange={(event) => setLanguage(event.target.value as LanguageOption)}
+                >
+                  <option value="es">Español</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
             </label>
-            <label className="rounded-2xl border border-dashed border-primary/30 px-4 py-3 text-sm text-text-secondary md:col-span-2">
-              <span className="text-xs uppercase tracking-wide">Consentimiento RGPD</span>
-              <div className="mt-2 flex items-start justify-between gap-4">
-                <p className="text-sm text-text-secondary">
-                  Autorizo el tratamiento de mis datos personales durante el congreso y comprendo que puedo solicitar la baja en
-                  cualquier momento.
-                </p>
+            <label className="rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
+              <span className="text-xs uppercase tracking-wide">Consentimiento *</span>
+              <div className="mt-2 flex items-center gap-3">
                 <input
                   type="checkbox"
                   checked={consent}
                   onChange={(event) => setConsent(event.target.checked)}
-                  className="mt-1 h-5 w-10 cursor-pointer rounded-full accent-primary"
+                  className="h-5 w-5 rounded-md border border-slate-200 text-primary focus:ring-primary"
+                  required
                 />
+                <span>Acepto participar en el evento y que se registren mis partidas durante el congreso.</span>
               </div>
             </label>
           </div>
-          {!isAliasValid && (
-            <p className="text-xs text-error">El alias debe tener al menos 2 caracteres.</p>
+          {profileError && (
+            <p className="rounded-xl border border-error/30 bg-error/5 px-3 py-2 text-sm text-error">{profileError}</p>
           )}
-          {!consent && (
-            <p className="text-xs text-text-secondary">
-              Debes aceptar el consentimiento para participar y recibir comunicaciones del evento.
-            </p>
-          )}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <button
-              type="button"
-              onClick={() => setCurrentStep('verification')}
-              className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-text-secondary transition-colors hover:bg-primary/10 hover:text-primary"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Revisar whitelist
-            </button>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <button
               type="submit"
               disabled={!canFinishProfile}
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white shadow-card transition-colors disabled:cursor-not-allowed disabled:bg-primary/60"
             >
-              Guardar y entrar en la app
-              <ArrowRight className="h-4 w-4" />
+              {savingProfile ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Guardando...
+                </>
+              ) : (
+                <>
+                  Finalizar acceso
+                  <CheckCircle2 className="h-4 w-4" />
+                </>
+              )}
             </button>
+            {profileSaved && (
+              <Link
+                to="/"
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-5 py-3 text-sm font-semibold text-text-primary transition-colors hover:bg-background"
+              >
+                <UserRound className="h-4 w-4" />
+                Entrar a la app
+              </Link>
+            )}
           </div>
-          {profileSaved && (
-            <div className="flex items-start gap-3 rounded-2xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-success" role="status">
-              <CheckCircle2 className="h-5 w-5" />
-              <div>
-                <p className="font-semibold text-text-primary">Perfil guardado</p>
-                <p className="text-text-secondary">
-                  ¡Todo listo! Serás redirigido a la Home del evento para comenzar a registrar partidas.
-                </p>
-                <Link to="/" className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline">
-                  Ir ahora a la Home
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </div>
-            </div>
-          )}
         </form>
       )
       break
@@ -419,174 +529,87 @@ export function Access() {
       mainContent = <div />
   }
 
-  let asideContent: JSX.Element
-  switch (currentStep) {
-    case 'welcome':
-      asideContent = (
-        <div className="space-y-4 text-sm text-text-secondary">
-          <div className="rounded-2xl bg-surface px-4 py-3">
-            <p className="text-sm font-semibold text-text-primary">Horario del día</p>
-            <p>07:00 – 06:59. Las estadísticas se agrupan usando esta frontera horaria.</p>
-          </div>
-          <div className="rounded-2xl bg-surface px-4 py-3">
-            <p className="text-sm font-semibold text-text-primary">Documentación</p>
-            <p>Consulta el PRD y las reglas del evento desde tu perfil una vez dentro.</p>
-          </div>
-        </div>
-      )
-      break
-    case 'login':
-      asideContent = (
-        <div className="space-y-4 text-sm text-text-secondary">
-          <div className="rounded-2xl bg-surface px-4 py-3">
-            <p className="text-sm font-semibold text-text-primary">Correos autorizados</p>
-            <ul className="mt-2 space-y-2">
-              {AUTHORIZED_EMAILS.slice(0, 3).map((authorized) => (
-                <li key={authorized}>• {authorized}</li>
-              ))}
-              <li>• alejandro.martin.millan@gmail.com (organización)</li>
-            </ul>
-          </div>
-          <div className="rounded-2xl bg-surface px-4 py-3">
-            <p className="text-sm font-semibold text-text-primary">Consejo</p>
-            <p>
-              Si alguien no aparece en la whitelist, solicita a la organización que lo añada desde el panel administrativo.
-            </p>
-          </div>
-        </div>
-      )
-      break
-    case 'verification':
-      asideContent = (
-        <div className="space-y-4 text-sm text-text-secondary">
-          <div className="rounded-2xl bg-surface px-4 py-3">
-            <p className="text-sm font-semibold text-text-primary">Tiempo estimado</p>
-            <p>La comprobación suele tardar menos de 2 segundos gracias al uso de Cloud Functions.</p>
-          </div>
-          <div className="rounded-2xl bg-surface px-4 py-3">
-            <p className="text-sm font-semibold text-text-primary">Soporte</p>
-            <p>
-              ¿Error inesperado? Envía un correo a{' '}
-              <a href={`mailto:${SUPPORT_EMAIL}`} className="font-semibold text-primary hover:underline">
-                {SUPPORT_EMAIL}
-              </a>{' '}
-              con tu nombre y captura para revisarlo.
-            </p>
-          </div>
-        </div>
-      )
-      break
-    case 'profile':
-      asideContent = (
-        <div className="space-y-4 text-sm text-text-secondary">
-          <div className="rounded-2xl bg-surface px-4 py-3">
-            <p className="text-sm font-semibold text-text-primary">Resumen provisional</p>
-            <ul className="mt-2 space-y-2">
-              <li className="flex items-center gap-2">
-                <UserRound className="h-4 w-4 text-primary" />
-                <span className="text-text-primary">Alias:</span> {alias || '—'}
-              </li>
-              <li className="flex items-center gap-2">
-                <MailCheck className="h-4 w-4 text-primary" />
-                <span className="text-text-primary">Email:</span> {email}
-              </li>
-              <li>
-                <span className="text-text-primary">Idioma:</span> {language === 'es' ? 'Español' : 'English'}
-              </li>
-              <li>
-                <span className="text-text-primary">Consentimiento:</span> {consent ? 'Aceptado' : 'Pendiente'}
-              </li>
-            </ul>
-          </div>
-          <div className="rounded-2xl bg-surface px-4 py-3">
-            <p className="text-sm font-semibold text-text-primary">Siguiente paso</p>
-            <p>Una vez guardado, accederás a la Home con métricas del día y accesos rápidos.</p>
-          </div>
-        </div>
-      )
-      break
-    default:
-      asideContent = <div />
-  }
-
   return (
     <div className="min-h-screen bg-background text-text-primary">
-      <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-10">
-        <header className="mb-8 flex flex-col items-center gap-3 text-center">
-          <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-2 text-sm font-semibold text-primary">
-            <Sparkles className="h-4 w-4" />
-            Acceso al congreso
-          </span>
-          <h1 className="text-3xl font-semibold text-text-primary">Completa el onboarding en cuatro pasos</h1>
-          <p className="text-sm text-text-secondary">
-            Usa tu email autorizado, valida la whitelist y establece tu perfil antes de entrar en la app.
-          </p>
-          <Link
-            to="/"
-            className="inline-flex items-center gap-2 text-sm font-semibold text-primary transition-colors hover:text-primary/80"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Volver a la Home
-          </Link>
-        </header>
-
-        <div className="card flex-1 space-y-6 p-6 md:p-8">
-          <div className="space-y-4">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div className="text-left md:text-left">
-                <p className="text-xs uppercase tracking-wide text-text-secondary">
-                  Paso {activeIndex + 1} de {onboardingSteps.length}
-                </p>
-                <h2 className="text-xl font-semibold text-text-primary">{activeStep.title}</h2>
-                <p className="text-sm text-text-secondary">{activeStep.description}</p>
-              </div>
-              <div className="min-w-[160px]">
-                <div className="h-2 rounded-full bg-background">
-                  <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
-                </div>
-                <p className="mt-2 text-right text-xs text-text-secondary">{Math.round(progress)}% completado</p>
-              </div>
-            </div>
-            <div className="grid gap-3 md:grid-cols-4">
-              {onboardingSteps.map((step, index) => {
-                const isComplete = index < activeIndex
-                const isActive = index === activeIndex
-
-                return (
-                  <div
-                    key={step.key}
-                    className={clsx(
-                      'rounded-2xl border px-3 py-3 text-left transition-colors',
-                      isActive && 'border-primary bg-primary/10 text-primary',
-                      isComplete && !isActive && 'border-primary/30 bg-background text-primary',
-                      index > activeIndex && 'border-transparent bg-background text-text-secondary',
-                    )}
-                  >
-                    <p className="text-xs uppercase tracking-wide">Paso {index + 1}</p>
-                    <p className="text-sm font-semibold">{step.title}</p>
-                  </div>
-                )
-              })}
-            </div>
+      <div className="mx-auto flex min-h-screen max-w-screen-md flex-col px-4 pb-16 pt-10 sm:px-8">
+        <header className="mb-10 space-y-4">
+          <div className="flex items-center justify-between">
+            <Link to="/" className="inline-flex items-center gap-2 text-sm font-semibold text-text-secondary hover:text-primary">
+              <ArrowLeft className="h-4 w-4" />
+              Volver
+            </Link>
+            <span className="rounded-full bg-primary/10 px-4 py-1 text-xs font-semibold text-primary">Acceso privado</span>
           </div>
-
-          <div className="grid flex-1 gap-6 md:grid-cols-[1.6fr,1fr]">
-            <section className="space-y-5">{mainContent}</section>
-            <aside className="rounded-2xl bg-background px-4 py-4">{asideContent}</aside>
-          </div>
-
-          <footer className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-text-secondary">
-            <p className="font-semibold text-text-primary">Soporte del evento</p>
-            <p>
-              Ante cualquier incidencia durante el acceso, escribe a{' '}
-              <a href={`mailto:${SUPPORT_EMAIL}`} className="font-semibold text-primary hover:underline">
-                {SUPPORT_EMAIL}
-              </a>
-              . El equipo responde en menos de 12 horas.
+          <div>
+            <h1 className="text-2xl font-semibold text-text-primary">Acceso al evento</h1>
+            <p className="text-sm text-text-secondary">
+              Completa los pasos para verificar tu invitación y activar tu cuenta en la plataforma del congreso.
             </p>
-          </footer>
-        </div>
+          </div>
+          <div className="rounded-full bg-background shadow-card">
+            <div className="relative h-2 overflow-hidden rounded-full bg-slate-200">
+              <div className="absolute inset-y-0 left-0 bg-primary transition-all" style={{ width: `${progress}%` }} />
+            </div>
+            <div className="mt-3 flex items-center justify-between text-xs font-semibold text-text-secondary">
+              {onboardingSteps.map((step, index) => (
+                <div key={step.key} className="flex flex-col items-center">
+                  <span className={clsx('mb-1 h-2 w-2 rounded-full', index <= activeIndex ? 'bg-primary' : 'bg-slate-300')} />
+                  <span>{step.title}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </header>
+        <main className="flex-1">
+          <div className="card space-y-6 p-6">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-text-secondary">Paso actual</p>
+              <h2 className="mt-1 text-xl font-semibold text-text-primary">{activeStep.title}</h2>
+              <p className="text-sm text-text-secondary">{activeStep.description}</p>
+            </div>
+            {mainContent}
+          </div>
+        </main>
       </div>
     </div>
   )
+}
+
+function mapAuthorizedEntry(email: string, data: DocumentData | undefined): AuthorizedEntry {
+  return {
+    email,
+    role: data?.role ?? undefined,
+    displayName: data?.displayName ?? undefined,
+  }
+}
+
+type AuthError = {
+  code: string
+  message: string
+}
+
+function mapAuthError(error: unknown): AuthError {
+  if (typeof error === 'object' && error && 'code' in error && 'message' in error) {
+    const firebaseError = error as FirebaseError
+    switch (firebaseError.code) {
+      case 'auth/invalid-email':
+        return { code: firebaseError.code, message: 'El formato de correo no es válido.' }
+      case 'auth/invalid-credential':
+      case 'auth/wrong-password':
+        return { code: firebaseError.code, message: 'La contraseña no es correcta para este usuario.' }
+      case 'auth/too-many-requests':
+        return {
+          code: firebaseError.code,
+          message: 'Hemos bloqueado temporalmente tu acceso por múltiples intentos fallidos. Prueba nuevamente en unos minutos.',
+        }
+      case 'auth/user-disabled':
+        return { code: firebaseError.code, message: 'Esta cuenta ha sido deshabilitada. Contacta con la organización.' }
+      case 'auth/user-not-found':
+        return { code: firebaseError.code, message: 'No encontramos una cuenta activa. Crearemos una nueva para ti.' }
+      default:
+        return { code: firebaseError.code, message: firebaseError.message }
+    }
+  }
+
+  return { code: 'unknown', message: 'Ocurrió un error inesperado al validar tus credenciales.' }
 }
