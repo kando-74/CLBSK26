@@ -2,6 +2,8 @@
 
 *(Documento de definición exhaustiva – sin código)*
 
+> **Documento complementario**: el plan de ejecución del MVP con épicas, arquitectura, modelos de datos y roadmap detallado se encuentra en [`MVP-Ejecucion.md`](./MVP-Ejecucion.md).
+
 ---
 
 ## 1) Resumen ejecutivo
