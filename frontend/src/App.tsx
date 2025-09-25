@@ -34,3 +34,5 @@ export default App
 // prueba husky root
 
 // prueba lint-staged con rc
+
+// prueba
