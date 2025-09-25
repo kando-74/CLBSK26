@@ -13,76 +13,13 @@ import type { BggSearchResult } from '../utils/bgg'
 import { getBoardGameDetails, searchBoardGames } from '../utils/bgg'
 import { useNavigate } from 'react-router-dom'
 import { GameTitle } from '../components/GameTitle'
-
-interface GameEntry {
-  id: number
-  title: string
-  owner: string
-  players: string
-  duration: string
-  weight: string
-  language: string
-  mechanics: string[]
-  manual?: boolean
-  coverUrl?: string
-}
-
-const initialLibrary: GameEntry[] = [
-  {
-    id: 1,
-    title: 'Heat: Pedal to the Metal',
-    owner: 'Claudia',
-    players: '2-6',
-    duration: '60-90 min',
-    weight: '2.3',
-    language: 'ES',
-    mechanics: ['Carreras', 'Gestión de mano'],
-    manual: true,
-    coverUrl: '/covers/heat-pedal-to-the-metal.svg',
-  },
-  {
-    id: 2,
-    title: 'Sky Team',
-    owner: 'Luis',
-    players: '2',
-    duration: '25 min',
-    weight: '2.0',
-    language: 'EN',
-    mechanics: ['Cooperativo', 'Tiradas ocultas'],
-    manual: true,
-    coverUrl: '/covers/sky-team.svg',
-  },
-  {
-    id: 3,
-    title: 'Kutná Hora',
-    owner: 'Elena',
-    players: '2-4',
-    duration: '90-120 min',
-    weight: '3.6',
-    language: 'ES',
-    mechanics: ['Economía', 'Construcción'],
-    manual: true,
-    coverUrl: '/covers/kutna-hora.svg',
-  },
-  {
-    id: 4,
-    title: 'Akropolis',
-    owner: 'Patricia',
-    players: '2-4',
-    duration: '30 min',
-    weight: '1.9',
-    language: 'FR',
-    mechanics: ['Puzzle', 'Draft'],
-    manual: true,
-    coverUrl: '/covers/akropolis.svg',
-  },
-]
+import { useLibraryService, type LibraryGameRecord, type LibraryGameInput } from '../services/library'
 
 type BuiltinFilter = {
   id: string
   label: string
   type: 'builtin'
-  apply: (game: GameEntry) => boolean
+  apply: (game: LibraryGameRecord) => boolean
 }
 
 type SearchFilter = {
@@ -110,7 +47,7 @@ function getMaxDurationMinutes(label: string): number | null {
   return Math.max(...values)
 }
 
-function matchesSearchTerm(game: GameEntry, term: string) {
+function matchesSearchTerm(game: LibraryGameRecord, term: string) {
   const normalizedTerm = term.toLowerCase()
   const haystack = `${game.title} ${game.owner} ${game.mechanics.join(' ')} ${game.language}`.toLowerCase()
   return haystack.includes(normalizedTerm)
@@ -141,8 +78,8 @@ const builtinFilters: BuiltinFilter[] = [
 ]
 
 export function Library() {
+  const { games, loading: libraryLoading, error: libraryError, addGame } = useLibraryService()
   const [search, setSearch] = useState('')
-  const [games, setGames] = useState<GameEntry[]>(initialLibrary)
   const [bggQuery, setBggQuery] = useState('')
   const [bggResults, setBggResults] = useState<BggSearchResult[]>([])
   const [isSearchingBgg, setIsSearchingBgg] = useState(false)
@@ -239,77 +176,67 @@ export function Library() {
 
     try {
       const details = await getBoardGameDetails(id)
-      let wasDuplicate = false
-
-      setGames((current) => {
-        if (current.some((item) => item.id === details.id)) {
-          wasDuplicate = true
-          return current
+      const playersLabel = (() => {
+        if (details.minPlayers && details.maxPlayers) {
+          if (details.minPlayers === details.maxPlayers) {
+            return `${details.minPlayers}`
+          }
+          return `${details.minPlayers}-${details.maxPlayers}`
         }
 
-        const playersLabel = (() => {
-          if (details.minPlayers && details.maxPlayers) {
-            if (details.minPlayers === details.maxPlayers) {
-              return `${details.minPlayers}`
-            }
-            return `${details.minPlayers}-${details.maxPlayers}`
-          }
-
-          if (details.minPlayers) {
-            return `${details.minPlayers}+`
-          }
-
-          return 'N/D'
-        })()
-
-        const durationLabel = (() => {
-          const minTime = details.minPlaytime ?? details.playingTime
-          const maxTime = details.maxPlaytime ?? details.playingTime
-
-          if (minTime && maxTime) {
-            if (minTime === maxTime) {
-              return `${minTime} min`
-            }
-
-            return `${minTime}-${maxTime} min`
-          }
-
-          if (maxTime) {
-            return `${maxTime} min`
-          }
-
-          return 'N/D'
-        })()
-
-        const mechanics =
-          details.mechanics.length > 0
-            ? details.mechanics.slice(0, 8)
-            : ['Sin datos BGG']
-
-        const weightLabel =
-          details.averageWeight && details.averageWeight > 0
-            ? details.averageWeight.toFixed(1)
-            : 'N/D'
-
-        const entry: GameEntry = {
-          id: details.id,
-          title: details.name,
-          owner: 'Importado',
-          players: playersLabel,
-          duration: durationLabel,
-          weight: weightLabel,
-          language: 'BGG',
-          mechanics,
-          coverUrl: details.imageUrl ?? details.thumbnailUrl,
+        if (details.minPlayers) {
+          return `${details.minPlayers}+`
         }
 
-        const next = [...current, entry]
-        next.sort((a, b) => a.title.localeCompare(b.title, 'es', { sensitivity: 'base' }))
-        return next
-      })
+        return 'N/D'
+      })()
 
-      if (wasDuplicate) {
+      const durationLabel = (() => {
+        const minTime = details.minPlaytime ?? details.playingTime
+        const maxTime = details.maxPlaytime ?? details.playingTime
+
+        if (minTime && maxTime) {
+          if (minTime === maxTime) {
+            return `${minTime} min`
+          }
+
+          return `${minTime}-${maxTime} min`
+        }
+
+        if (maxTime) {
+          return `${maxTime} min`
+        }
+
+        return 'N/D'
+      })()
+
+      const mechanics =
+        details.mechanics.length > 0 ? details.mechanics.slice(0, 8) : ['Sin datos BGG']
+
+      const weightLabel =
+        details.averageWeight && details.averageWeight > 0
+          ? details.averageWeight.toFixed(1)
+          : 'N/D'
+
+      const input: LibraryGameInput = {
+        id: `bgg-${details.id}`,
+        title: details.name,
+        owner: 'Importado',
+        players: playersLabel,
+        duration: durationLabel,
+        weight: weightLabel,
+        language: 'BGG',
+        mechanics,
+        coverUrl: details.imageUrl ?? details.thumbnailUrl ?? undefined,
+        bggId: details.id,
+      }
+
+      const result = await addGame(input)
+
+      if (result.status === 'already-exists') {
         setImportMessage({ type: 'error', message: 'El juego ya está en la ludoteca.' })
+      } else if (result.status === 'error') {
+        setImportMessage({ type: 'error', message: result.message })
       } else {
         setImportMessage({ type: 'success', message: 'Juego importado correctamente desde BGG.' })
       }
@@ -390,7 +317,7 @@ export function Library() {
   )
 
   const handleRegisterGame = useCallback(
-    (game: GameEntry) => {
+    (game: LibraryGameRecord) => {
       navigate('/registrar', { state: { preselectedGame: game.title } })
     },
     [navigate],
@@ -561,7 +488,7 @@ export function Library() {
           {bggResults.length > 0 && (
             <div className="space-y-2">
               {bggResults.map((result) => {
-                const alreadyImported = games.some((game) => game.id === result.id)
+                const alreadyImported = games.some((game) => game.bggId === result.id)
 
                 return (
                   <div
@@ -606,70 +533,91 @@ export function Library() {
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {filtered.map((game) => (
-          <article key={game.id} className="card flex flex-col gap-4 p-5">
-            <div className="flex items-start justify-between gap-4">
-              <GameTitle
-                name={game.title}
-                coverUrl={game.coverUrl}
-                size="lg"
-                className="items-start"
-                textClassName="text-xl"
-                role="heading"
-                aria-level={3}
-              >
-                <p className="text-sm font-normal text-text-secondary">Propietario: {game.owner}</p>
-              </GameTitle>
-              {game.manual ? (
-                <span className="rounded-full bg-secondary/10 px-3 py-1 text-xs font-semibold text-secondary">Manual</span>
-              ) : (
-                <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">BGG #{game.id}</span>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-3 text-sm text-text-secondary">
-              <div className="rounded-xl bg-background px-3 py-2">
-                <p className="text-xs uppercase tracking-wide">Jugadores</p>
-                <p className="text-base text-text-primary">{game.players}</p>
+      {libraryError && (
+        <div className="rounded-2xl border border-error/40 bg-error/10 px-4 py-3 text-sm text-error">
+          {libraryError}
+        </div>
+      )}
+
+      {libraryLoading ? (
+        <div className="rounded-2xl border border-primary/20 bg-white px-4 py-3 text-sm text-text-secondary">
+          Cargando ludoteca...
+        </div>
+      ) : filtered.length === 0 ? (
+        <section className="card space-y-3 p-5">
+          <h3 className="text-lg font-semibold text-text-primary">No hay juegos que coincidan</h3>
+          <p className="text-sm text-text-secondary">
+            Ajusta los filtros o importa nuevos títulos desde BoardGameGeek para ampliar la ludoteca.
+          </p>
+        </section>
+      ) : (
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {filtered.map((game) => (
+            <article key={game.id} className="card flex flex-col gap-4 p-5">
+              <div className="flex items-start justify-between gap-4">
+                <GameTitle
+                  name={game.title}
+                  coverUrl={game.coverUrl}
+                  size="lg"
+                  className="items-start"
+                  textClassName="text-xl"
+                  role="heading"
+                  aria-level={3}
+                >
+                  <p className="text-sm font-normal text-text-secondary">Propietario: {game.owner}</p>
+                </GameTitle>
+                {game.manual ? (
+                  <span className="rounded-full bg-secondary/10 px-3 py-1 text-xs font-semibold text-secondary">Manual</span>
+                ) : (
+                  <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                    BGG #{game.bggId ?? 'N/D'}
+                  </span>
+                )}
               </div>
-              <div className="rounded-xl bg-background px-3 py-2">
-                <p className="text-xs uppercase tracking-wide">Duración</p>
-                <p className="text-base text-text-primary">{game.duration}</p>
+              <div className="grid grid-cols-2 gap-3 text-sm text-text-secondary">
+                <div className="rounded-xl bg-background px-3 py-2">
+                  <p className="text-xs uppercase tracking-wide">Jugadores</p>
+                  <p className="text-base text-text-primary">{game.players}</p>
+                </div>
+                <div className="rounded-xl bg-background px-3 py-2">
+                  <p className="text-xs uppercase tracking-wide">Duración</p>
+                  <p className="text-base text-text-primary">{game.duration}</p>
+                </div>
+                <div className="rounded-xl bg-background px-3 py-2">
+                  <p className="text-xs uppercase tracking-wide">Peso BGG</p>
+                  <p className="text-base text-text-primary">{game.weight}</p>
+                </div>
+                <div className="rounded-xl bg-background px-3 py-2">
+                  <p className="text-xs uppercase tracking-wide">Idioma</p>
+                  <p className="inline-flex items-center gap-2 text-base text-text-primary">
+                    <Globe className="h-4 w-4" />
+                    {game.language}
+                  </p>
+                </div>
               </div>
-              <div className="rounded-xl bg-background px-3 py-2">
-                <p className="text-xs uppercase tracking-wide">Peso BGG</p>
-                <p className="text-base text-text-primary">{game.weight}</p>
+              <div className="flex flex-wrap gap-2 text-xs text-text-secondary">
+                {game.mechanics.map((mechanic) => (
+                  <span key={mechanic} className="rounded-full bg-background px-3 py-1">
+                    {mechanic}
+                  </span>
+                ))}
               </div>
-              <div className="rounded-xl bg-background px-3 py-2">
-                <p className="text-xs uppercase tracking-wide">Idioma</p>
-                <p className="inline-flex items-center gap-2 text-base text-text-primary">
-                  <Globe className="h-4 w-4" />
-                  {game.language}
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2 text-xs text-text-secondary">
-              {game.mechanics.map((mechanic) => (
-                <span key={mechanic} className="rounded-full bg-background px-3 py-1">
-                  {mechanic}
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  onClick={() => handleRegisterGame(game)}
+                  className="text-sm font-semibold text-primary"
+                >
+                  Registrar partida
+                </button>
+                <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                  <Users className="h-4 w-4" />
+                  Ideal 4 jugadores
                 </span>
-              ))}
-            </div>
-            <div className="flex items-center justify-between pt-2">
-              <button
-                onClick={() => handleRegisterGame(game)}
-                className="text-sm font-semibold text-primary"
-              >
-                Registrar partida
-              </button>
-              <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-                <Users className="h-4 w-4" />
-                Ideal 4 jugadores
-              </span>
-            </div>
-          </article>
-        ))}
-      </section>
+              </div>
+            </article>
+          ))}
+        </section>
+      )}
     </div>
   )
 }
