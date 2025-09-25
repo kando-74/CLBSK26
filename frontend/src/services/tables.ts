@@ -3,6 +3,7 @@ import {
   collection,
   doc,
   getDocs,
+  onSnapshot,
   orderBy,
   query,
   runTransaction,
@@ -296,6 +297,50 @@ async function fetchTablesFromFirestore(deviceId: string): Promise<TableRecord[]
 
   persistJoinedTableIds(joinedSet)
   return records
+}
+
+function subscribeTablesFromFirestore(
+  deviceId: string,
+  onUpdate: (tables: TableRecord[]) => void,
+  onError: (message: string) => void,
+): () => void {
+  if (!tablesCollectionRef) {
+    return () => {}
+  }
+
+  const q = query(tablesCollectionRef, orderBy('createdAt', 'desc'))
+
+  const unsubscribe = onSnapshot(
+    q,
+    (snapshot) => {
+      const joinedSet = readJoinedTableIds()
+
+      const tables = snapshot.docs.map((document) => {
+        const data = document.data() as FirestoreTable
+        const joinedBy = Array.isArray(data.joinedBy) ? data.joinedBy : []
+        const joined = joinedBy.includes(deviceId)
+
+        if (joined) {
+          joinedSet.add(document.id)
+        } else {
+          joinedSet.delete(document.id)
+        }
+
+        return mapFirestoreTable(document.id, data, joined)
+      })
+
+      persistJoinedTableIds(joinedSet)
+      onUpdate(tables)
+    },
+    (error) => {
+      console.error('Error de sincronización en tiempo real del tablón', error)
+      onError('No se pudieron sincronizar las mesas en tiempo real. Revisa tu conexión.')
+    },
+  )
+
+  return () => {
+    unsubscribe()
+  }
 }
 
 async function createTableInFirestore(input: CreateTableInput, deviceId: string): Promise<TableActionResult> {
@@ -648,6 +693,30 @@ type UseTablesService = TablesState & {
 
 export function useTablesService(): UseTablesService {
   const [state, setState] = useState<TablesState>({ loading: true, error: null, tables: [] })
+
+  useEffect(() => {
+    if (!useFirestore) {
+      return
+    }
+
+    const deviceId = getDeviceId()
+
+    setState((current) => ({ ...current, loading: true, error: null }))
+
+    const unsubscribe = subscribeTablesFromFirestore(
+      deviceId,
+      (tables) => {
+        setState({ loading: false, error: null, tables })
+      },
+      (message) => {
+        setState((current) => ({ ...current, loading: false, error: message }))
+      },
+    )
+
+    return () => {
+      unsubscribe()
+    }
+  }, [])
 
   const loadTables = useCallback(async () => {
     setState((current) => ({ ...current, loading: true, error: null }))
