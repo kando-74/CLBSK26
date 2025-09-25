@@ -4,6 +4,7 @@ import { GameTitle } from '../components/GameTitle'
 import { useTablesService, type TableActionStatus, type TableRecord } from '../services/tables'
 import { useAuth } from '../components/AuthProvider'
 import { getDisplayName } from '../utils/user'
+import { TableChat } from '../components/TableChat'
 
 type FilterState = {
   hideFull: boolean
@@ -63,6 +64,7 @@ export function Board() {
   const [pendingJoinId, setPendingJoinId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const actionMessageRef = useRef<HTMLDivElement | null>(null)
+  const [openChatTableId, setOpenChatTableId] = useState<string | null>(null)
 
   const availableRooms = useMemo(() => {
     const rooms = new Set<string>()
@@ -484,6 +486,26 @@ export function Board() {
                   <p>Tras confirmar plazas</p>
                 </div>
               </div>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenChatTableId((current) => (current === table.id ? null : table.id))
+                  }}
+                  className="text-sm font-semibold text-primary"
+                >
+                  {openChatTableId === table.id ? 'Cerrar chat' : 'Abrir chat'}
+                </button>
+              </div>
+              {openChatTableId === table.id && (
+                <TableChat
+                  tableId={table.id}
+                  currentUserName={userDisplayName}
+                  currentUserId={user?.uid ?? null}
+                  canUsePrivateChannel={table.joined}
+                  className="mt-3"
+                />
+              )}
             </article>
           ))}
         </section>
