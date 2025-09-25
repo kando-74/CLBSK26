@@ -1,127 +1,47 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { LucideIcon } from 'lucide-react'
 import { ArrowDownToLine, BarChart3, LineChart, Timer, Trophy, Users } from 'lucide-react'
 import { clsx } from 'clsx'
-import { getCurrentCongressDay } from '../utils/date'
+import { getCurrentCongressDay, getDayBoundaries } from '../utils/date'
 import { GameTitle } from '../components/GameTitle'
+import {
+  listPlays,
+  listActivePlays,
+  summarizeRoomOccupancy,
+  type PlayRecord,
+  type RoomOccupancySummary,
+} from '../services/plays'
 
 type StatsTab = 'global' | 'personal'
 
-const globalMetrics = [
-  {
-    label: 'Partidas registradas',
-    value: '128',
-    helper: 'Últimas 24 horas',
-    trend: '+12% vs ayer',
-    icon: Trophy,
-  },
-  {
-    label: 'Tiempo acumulado',
-    value: '98 h',
-    helper: 'Tiempo total jugado',
-    trend: '+5 h respecto a 2023',
-    icon: Timer,
-  },
-  {
-    label: 'Asistentes activos',
-    value: '74',
-    helper: 'de 96 inscritos',
-    trend: '77% participación',
-    icon: Users,
-  },
-]
+const PERSONAL_SAMPLE_NAME = 'Ana G.'
 
-const hourlyDistribution = [
-  { hour: '09h', value: 4 },
-  { hour: '11h', value: 9 },
-  { hour: '13h', value: 6 },
-  { hour: '15h', value: 14 },
-  { hour: '17h', value: 18 },
-  { hour: '19h', value: 22 },
-  { hour: '21h', value: 16 },
-  { hour: '23h', value: 8 },
-]
+type MetricCard = {
+  label: string
+  value: string
+  helper: string
+  trend: string
+  icon: LucideIcon
+}
 
-const dayComparison = [
-  { label: 'Jueves', value: 32, detail: '+4 vs miércoles' },
-  { label: 'Viernes', value: 41, detail: '+9 vs jueves' },
-  { label: 'Sábado', value: 55, detail: '+14 vs viernes' },
-]
+type PersonalActivitySlot = {
+  label: string
+  plays: number
+  minutes: number
+}
 
-const topGames = [
-  {
-    title: 'Heat: Pedal to the Metal',
-    plays: 8,
-    time: '9 h 10 min',
-    players: 26,
-  },
-  {
-    title: 'Earth',
-    plays: 6,
-    time: '7 h 45 min',
-    players: 18,
-  },
-  {
-    title: 'Scout',
-    plays: 5,
-    time: '4 h 15 min',
-    players: 15,
-  },
-]
+type PartnerSummary = {
+  name: string
+  plays: number
+  sharedMinutes: number
+}
 
-const personalMetrics = [
-  {
-    label: 'Partidas jugadas',
-    value: '12',
-    helper: 'Últimos 3 días',
-    trend: '+3 vs tu media',
-    icon: Trophy,
-  },
-  {
-    label: 'Tiempo de juego',
-    value: '14 h 20 min',
-    helper: 'Promedio 71 min',
-    trend: '↑ +18%',
-    icon: Timer,
-  },
-  {
-    label: 'Ratio victorias',
-    value: '58%',
-    helper: '7 victorias',
-    trend: '2 seguidas',
-    icon: BarChart3,
-  },
-]
-
-const personalActivity = [
-  { day: 'Jueves', plays: 3, minutes: 210 },
-  { day: 'Viernes', plays: 5, minutes: 320 },
-  { day: 'Sábado', plays: 4, minutes: 280 },
-  { day: 'Domingo', plays: 2, minutes: 150 },
-]
-
-const partnerStats = [
-  { name: 'Ana M.', plays: 5, sharedMinutes: 390 },
-  { name: 'Jorge L.', plays: 4, sharedMinutes: 240 },
-  { name: 'Claudia P.', plays: 3, sharedMinutes: 215 },
-]
-
-const achievements = [
-  {
-    title: 'Explorador de novedades',
-    description: 'Has jugado a 3 juegos que debutan este año en el congreso.',
-    progress: 1,
-  },
-  {
-    title: 'Maratón 10h',
-    description: 'Acumula 10 horas registradas durante el evento.',
-    progress: 0.85,
-  },
-  {
-    title: 'Conecta equipos',
-    description: 'Participa con 6 compañeros distintos en un mismo día.',
-    progress: 0.66,
-  },
-]
+type TopGameSummary = {
+  title: string
+  plays: number
+  minutes: number
+  players: number
+}
 
 function formatMinutes(minutes: number) {
   const hours = Math.floor(minutes / 60)
@@ -142,29 +62,338 @@ export function Statistics() {
   const [activeTab, setActiveTab] = useState<StatsTab>('global')
   const [exportStatus, setExportStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const day = getCurrentCongressDay()
+  const { start: dayStart, end: dayEnd } = getDayBoundaries()
+  const [plays, setPlays] = useState<PlayRecord[]>([])
+  const [activePlays, setActivePlays] = useState<PlayRecord[]>([])
+  const [roomSummary, setRoomSummary] = useState<RoomOccupancySummary>({})
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const globalSummary = useMemo(() => {
+    const totalPlays = plays.length
+    const totalMinutes = plays.reduce((accumulator, play) => accumulator + (play.durationMinutes ?? 0), 0)
+
+    const participantSet = new Set<string>()
+    let totalParticipations = 0
+
+    plays.forEach((play) => {
+      play.players.forEach((player) => {
+        const normalized = player.trim()
+        if (normalized) {
+          participantSet.add(normalized)
+        }
+        totalParticipations += 1
+      })
+    })
+
+    return {
+      totalPlays,
+      totalMinutes,
+      activePlays: activePlays.length,
+      uniquePlayers: participantSet.size,
+      participations: totalParticipations,
+      averagePlayers: totalPlays > 0 ? totalParticipations / totalPlays : 0,
+      averageDuration: totalPlays > 0 ? totalMinutes / totalPlays : 0,
+    }
+  }, [activePlays.length, plays])
+
+  const hourlyDistribution = useMemo(() => {
+    const buckets = new Map<string, number>()
+    plays.forEach((play) => {
+      const date = new Date(play.startTime)
+      const key = `${String(date.getHours()).padStart(2, '0')}h`
+      const value = buckets.get(key) ?? 0
+      buckets.set(key, value + 1)
+    })
+
+    return Array.from(buckets.entries())
+      .map(([hour, value]) => ({ hour, value }))
+      .sort((first, second) => first.hour.localeCompare(second.hour))
+  }, [plays])
 
   const maxHourValue = useMemo(
-    () => Math.max(...hourlyDistribution.map((item) => item.value)),
-    [],
+    () => Math.max(1, ...hourlyDistribution.map((item) => item.value)),
+    [hourlyDistribution],
   )
 
-  const hourlySummary = useMemo(
-    () => hourlyDistribution.map((item) => `${item.hour}: ${item.value} partidas`).join('. '),
-    [],
+  const hourlySummary = useMemo(() => {
+    if (hourlyDistribution.length === 0) {
+      return 'Aún no hay partidas registradas en esta jornada.'
+    }
+    return hourlyDistribution.map((item) => `${item.hour}: ${item.value} partida(s)`).join('. ')
+  }, [hourlyDistribution])
+
+  const personalPlays = useMemo(() => {
+    const normalizedTarget = PERSONAL_SAMPLE_NAME.trim().toLowerCase()
+    if (!normalizedTarget) {
+      return []
+    }
+
+    return plays.filter((play) =>
+      play.players.some((player) => player.trim().toLowerCase() === normalizedTarget),
+    )
+  }, [plays])
+
+  const personalSummary = useMemo(() => {
+    if (personalPlays.length === 0) {
+      return 'Aún no hay partidas registradas a tu nombre en esta jornada.'
+    }
+
+    const totalMinutes = personalPlays.reduce((accumulator, play) => accumulator + (play.durationMinutes ?? 0), 0)
+    return `${personalPlays.length} partidas • ${formatMinutes(totalMinutes)}`
+  }, [personalPlays])
+
+  const globalMetrics = useMemo<MetricCard[]>(() => {
+    return [
+      {
+        label: 'Partidas registradas',
+        value: String(globalSummary.totalPlays),
+        helper: 'Jornada actual',
+        trend:
+          globalSummary.activePlays > 0
+            ? `${globalSummary.activePlays} en curso ahora mismo`
+            : 'Sin partidas activas en este momento',
+        icon: Trophy,
+      },
+      {
+        label: 'Tiempo acumulado',
+        value: globalSummary.totalMinutes > 0 ? formatMinutes(globalSummary.totalMinutes) : '—',
+        helper: 'Duración registrada',
+        trend:
+          globalSummary.totalPlays > 0
+            ? `Promedio ${formatMinutes(Math.round(globalSummary.averageDuration || 0))} por partida`
+            : 'Esperando primeras partidas registradas',
+        icon: Timer,
+      },
+      {
+        label: 'Participantes únicos',
+        value: String(globalSummary.uniquePlayers),
+        helper: 'Personas distintas',
+        trend:
+          globalSummary.participations > 0
+            ? `${globalSummary.participations} participaciones registradas`
+            : 'Sin inscripciones todavía',
+        icon: Users,
+      },
+    ]
+  }, [globalSummary])
+
+  const topGames = useMemo<TopGameSummary[]>(() => {
+    const entries = new Map<string, { plays: number; minutes: number; players: Set<string> }>()
+
+    plays.forEach((play) => {
+      const key = play.game.trim() || 'Juego sin título'
+      const current = entries.get(key) ?? { plays: 0, minutes: 0, players: new Set<string>() }
+      current.plays += 1
+      current.minutes += play.durationMinutes ?? 0
+      play.players.forEach((player) => {
+        const normalized = player.trim()
+        if (normalized) {
+          current.players.add(normalized)
+        }
+      })
+      entries.set(key, current)
+    })
+
+    return Array.from(entries.entries())
+      .map(([title, data]) => ({ title, plays: data.plays, minutes: data.minutes, players: data.players.size }))
+      .sort((first, second) => {
+        if (second.plays !== first.plays) {
+          return second.plays - first.plays
+        }
+        return second.minutes - first.minutes
+      })
+      .slice(0, 3)
+  }, [plays])
+
+  const roomOccupancyList = useMemo(
+    () =>
+      Object.entries(roomSummary)
+        .map(([room, summary]) => ({ room, activePlays: summary.activePlays, players: summary.players }))
+        .sort((first, second) => {
+          if (second.activePlays !== first.activePlays) {
+            return second.activePlays - first.activePlays
+          }
+          return second.players - first.players
+        }),
+    [roomSummary],
   )
+
+  const personalMetrics = useMemo<MetricCard[]>(() => {
+    const totalMinutes = personalPlays.reduce((accumulator, play) => accumulator + (play.durationMinutes ?? 0), 0)
+    const uniqueGames = new Set(personalPlays.map((play) => play.game.trim()).filter(Boolean))
+    const partnerSet = new Set<string>()
+
+    personalPlays.forEach((play) => {
+      play.players.forEach((player) => {
+        const normalized = player.trim()
+        if (!normalized || normalized.toLowerCase() === PERSONAL_SAMPLE_NAME.toLowerCase()) {
+          return
+        }
+        partnerSet.add(normalized)
+      })
+    })
+
+    if (personalPlays.length === 0) {
+      return [
+        {
+          label: 'Partidas registradas',
+          value: '0',
+          helper: 'Jornada actual',
+          trend: 'Añade la primera partida para activar estos indicadores.',
+          icon: Trophy,
+        },
+        {
+          label: 'Tiempo de juego',
+          value: '—',
+          helper: 'Duración acumulada',
+          trend: 'Sin minutos registrados todavía.',
+          icon: Timer,
+        },
+        {
+          label: 'Compañeros de mesa',
+          value: '0',
+          helper: 'Jugadores distintos',
+          trend: 'Invita a otros asistentes a tu próxima partida.',
+          icon: Users,
+        },
+      ]
+    }
+
+    const averageDuration = personalPlays.length > 0 ? Math.round(totalMinutes / personalPlays.length) : 0
+
+    return [
+      {
+        label: 'Partidas registradas',
+        value: String(personalPlays.length),
+        helper: 'Jornada actual',
+        trend: uniqueGames.size > 1 ? `${uniqueGames.size} títulos distintos` : 'Un único título por ahora',
+        icon: Trophy,
+      },
+      {
+        label: 'Tiempo de juego',
+        value: totalMinutes > 0 ? formatMinutes(totalMinutes) : '—',
+        helper: 'Duración acumulada',
+        trend:
+          averageDuration > 0
+            ? `Promedio ${formatMinutes(averageDuration)} por partida`
+            : 'Sin duración registrada todavía',
+        icon: Timer,
+      },
+      {
+        label: 'Compañeros de mesa',
+        value: String(partnerSet.size),
+        helper: 'Jugadores distintos',
+        trend:
+          partnerSet.size > 0
+            ? `Media ${(partnerSet.size / Math.max(1, personalPlays.length)).toFixed(1)} por partida`
+            : 'Pendiente de compartir mesa',
+        icon: Users,
+      },
+    ]
+  }, [personalPlays])
+
+  const personalActivity = useMemo<PersonalActivitySlot[]>(() => {
+    const slotDefinitions = [
+      { label: 'Mañana (07h-12h)', start: 7, end: 12 },
+      { label: 'Mediodía (12h-17h)', start: 12, end: 17 },
+      { label: 'Tarde (17h-22h)', start: 17, end: 22 },
+      { label: 'Noche (22h-07h)', start: 22, end: 31 },
+    ]
+
+    const base: PersonalActivitySlot[] = slotDefinitions.map((slot) => ({ label: slot.label, plays: 0, minutes: 0 }))
+
+    personalPlays.forEach((play) => {
+      const date = new Date(play.startTime)
+      let hour = date.getHours()
+      if (hour < 7) {
+        hour += 24
+      }
+      const minutes = play.durationMinutes ?? 0
+      const index = slotDefinitions.findIndex((slot) => hour >= slot.start && hour < slot.end)
+      if (index !== -1) {
+        base[index].plays += 1
+        base[index].minutes += minutes
+      }
+    })
+
+    return base
+  }, [personalPlays])
 
   const maxPersonalPlays = useMemo(
-    () => Math.max(...personalActivity.map((item) => item.plays)),
-    [],
+    () => Math.max(1, ...personalActivity.map((item) => item.plays)),
+    [personalActivity],
   )
 
-  const personalSummary = useMemo(
-    () =>
-      personalActivity
-        .map((item) => `${item.day}: ${item.plays} partidas (${formatMinutes(item.minutes)})`)
-        .join('. '),
-    [],
-  )
+  const hasPersonalActivity = useMemo(() => personalActivity.some((item) => item.plays > 0), [personalActivity])
+
+  const partnerStats = useMemo<PartnerSummary[]>(() => {
+    const normalizedTarget = PERSONAL_SAMPLE_NAME.trim().toLowerCase()
+    const summary = new Map<string, { plays: number; minutes: number }>()
+
+    personalPlays.forEach((play) => {
+      play.players.forEach((player) => {
+        const normalized = player.trim()
+        if (!normalized || normalized.toLowerCase() === normalizedTarget) {
+          return
+        }
+
+        const current = summary.get(normalized) ?? { plays: 0, minutes: 0 }
+        current.plays += 1
+        current.minutes += play.durationMinutes ?? 0
+        summary.set(normalized, current)
+      })
+    })
+
+    return Array.from(summary.entries())
+      .map(([name, data]) => ({ name, plays: data.plays, sharedMinutes: data.minutes }))
+      .sort((first, second) => {
+        if (second.plays !== first.plays) {
+          return second.plays - first.plays
+        }
+        return second.sharedMinutes - first.sharedMinutes
+      })
+      .slice(0, 5)
+  }, [personalPlays])
+
+  const achievements = useMemo(() => {
+    if (personalPlays.length === 0) {
+      return [
+        {
+          title: 'Empieza a registrar partidas',
+          description: 'Añade tu primera partida para activar el seguimiento personal.',
+          progress: 0,
+        },
+      ]
+    }
+
+    const totalMinutes = personalPlays.reduce((accumulator, play) => accumulator + (play.durationMinutes ?? 0), 0)
+    const uniqueGames = new Set(personalPlays.map((play) => play.game.trim()).filter(Boolean))
+    const completedPlays = personalPlays.filter((play) => play.status === 'completed').length
+
+    return [
+      {
+        title: 'Sesión activa',
+        description: `Has registrado ${personalPlays.length} partida(s) en la jornada.`,
+        progress: Math.min(1, personalPlays.length / 4),
+      },
+      {
+        title: 'Maratón 5h',
+        description: 'Objetivo: 300 minutos acumulados en partidas.',
+        progress: Math.min(1, totalMinutes / 300),
+      },
+      {
+        title: 'Mesa completa',
+        description: completedPlays > 0 ? `${completedPlays} partida(s) cerradas con resultado.` : 'Cierra la primera partida para registrar su resultado.',
+        progress: Math.min(1, completedPlays / 3),
+      },
+      {
+        title: 'Catálogo en expansión',
+        description: uniqueGames.size > 0 ? `${uniqueGames.size} título(s) distintos.` : 'Juega a un nuevo título para desbloquear este indicador.',
+        progress: Math.min(1, uniqueGames.size / 5),
+      },
+    ]
+  }, [personalPlays])
 
   useEffect(() => {
     if (!exportStatus) {
@@ -175,15 +404,92 @@ export function Statistics() {
     return () => clearTimeout(timeout)
   }, [exportStatus])
 
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadPlays() {
+      setLoading(true)
+      setError(null)
+
+      try {
+        const playsOfDay = await listPlays({ dayStart, dayEnd })
+        const active = await listActivePlays({ dayStart, dayEnd })
+
+        if (cancelled) {
+          return
+        }
+
+        setPlays(playsOfDay)
+        setActivePlays(active)
+        setRoomSummary(summarizeRoomOccupancy(active))
+      } catch (loadError) {
+        console.error('No se pudieron cargar las estadísticas', loadError)
+        if (!cancelled) {
+          setError('No se pudieron cargar las estadísticas del día. Intenta recargar la página.')
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    void loadPlays()
+
+    const interval = window.setInterval(() => {
+      void loadPlays()
+    }, 10000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [dayEnd, dayStart])
+
   const handleDownloadCsv = useCallback(() => {
     try {
       const rows: string[][] = [
         ['Sección', 'Métrica', 'Valor', 'Detalle'],
-        ...globalMetrics.map((metric) => ['Global', metric.label, metric.value, metric.trend]),
+        ['Global', 'Partidas registradas', String(globalSummary.totalPlays), `${activePlays.length} en curso`],
+        [
+          'Global',
+          'Tiempo total',
+          globalSummary.totalMinutes > 0 ? formatMinutes(globalSummary.totalMinutes) : '—',
+          'Incluye partidas cerradas',
+        ],
+        [
+          'Global',
+          'Participantes únicos',
+          String(globalSummary.uniquePlayers),
+          `${globalSummary.participations} participaciones`,
+        ],
         ...hourlyDistribution.map((item) => ['Horarios', item.hour, String(item.value), 'Partidas registradas']),
-        ...dayComparison.map((item) => ['Comparativa días', item.label, String(item.value), item.detail]),
-        ...personalMetrics.map((metric) => ['Personal', metric.label, metric.value, metric.trend]),
       ]
+
+      if (roomOccupancyList.length > 0) {
+        rows.push(['Salas', 'Con actividad', String(roomOccupancyList.length), 'Mesas activas por sala'])
+        roomOccupancyList.forEach((item) => {
+          rows.push([
+            'Salas',
+            item.room,
+            `${item.activePlays} mesa(s)`,
+            `${item.players} jugador(es) implicados`,
+          ])
+        })
+      }
+
+      if (topGames.length > 0) {
+        topGames.forEach((game, index) => {
+          rows.push([
+            'Top juegos',
+            `${index + 1}. ${game.title}`,
+            `${game.plays} partida(s)`,
+            `${game.minutes > 0 ? formatMinutes(game.minutes) : '—'} · ${game.players} jugador(es)`,
+          ])
+        })
+      }
+
+      rows.push(['Personal', 'Resumen', personalSummary, `Referencia de usuario: ${PERSONAL_SAMPLE_NAME}`])
 
       const csvContent = rows
         .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
@@ -204,7 +510,15 @@ export function Statistics() {
         message: error instanceof Error ? error.message : 'No se pudo generar el CSV.',
       })
     }
-  }, [day.label])
+  }, [
+    activePlays.length,
+    day.label,
+    globalSummary,
+    hourlyDistribution,
+    personalSummary,
+    roomOccupancyList,
+    topGames,
+  ])
 
   return (
     <div className="space-y-6 pb-10">
@@ -237,6 +551,18 @@ export function Statistics() {
           }`}
         >
           {exportStatus.message}
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-2xl border border-error/30 bg-error/10 px-4 py-3 text-sm font-medium text-error">
+          {error}
+        </div>
+      )}
+
+      {loading && !error && (
+        <div className="rounded-2xl border border-primary/10 bg-primary/5 px-4 py-3 text-sm text-primary">
+          Actualizando estadísticas en tiempo real...
         </div>
       )}
 
@@ -294,38 +620,53 @@ export function Statistics() {
               <p className="text-sm text-text-secondary">
                 Histograma de actividad en la jornada actual. Permite ajustar recursos (salas, voluntarios) según la demanda.
               </p>
-              <div className="flex items-end gap-3" aria-hidden="true">
-                {hourlyDistribution.map((slot) => (
-                  <div key={slot.hour} className="flex flex-1 flex-col items-center gap-2 text-xs text-text-secondary">
-                    <div className="flex h-32 w-full items-end justify-center rounded-full bg-primary/10">
-                      <div
-                        className="w-3 rounded-full bg-primary"
-                        style={{ height: `${(slot.value / maxHourValue) * 100}%` }}
-                      />
+              {hourlyDistribution.length > 0 ? (
+                <div className="flex items-end gap-3" aria-hidden="true">
+                  {hourlyDistribution.map((slot) => (
+                    <div key={slot.hour} className="flex flex-1 flex-col items-center gap-2 text-xs text-text-secondary">
+                      <div className="flex h-32 w-full items-end justify-center rounded-full bg-primary/10">
+                        <div
+                          className="w-3 rounded-full bg-primary"
+                          style={{ height: `${(slot.value / maxHourValue) * 100}%` }}
+                        />
+                      </div>
+                      <span className="font-semibold text-text-primary">{slot.value}</span>
+                      <span>{slot.hour}</span>
                     </div>
-                    <span className="font-semibold text-text-primary">{slot.value}</span>
-                    <span>{slot.hour}</span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
+                  Aún no hay partidas registradas en esta jornada.
+                </p>
+              )}
               <p className="sr-only">Distribución horaria: {hourlySummary}.</p>
             </div>
 
             <div className="card space-y-4 p-5">
-              <h3 className="text-lg font-semibold text-text-primary">Partidas por día</h3>
-              <ul className="space-y-3 text-sm text-text-secondary">
-                {dayComparison.map((item) => (
-                  <li key={item.label} className="flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold text-text-primary">{item.label}</p>
-                      <p>{item.detail}</p>
-                    </div>
-                    <span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
-                      {item.value}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <h3 className="text-lg font-semibold text-text-primary">Salas con actividad</h3>
+              <p className="text-sm text-text-secondary">
+                Estado en vivo de las partidas en curso. Útil para reasignar voluntarios o localizar mesas.
+              </p>
+              {roomOccupancyList.length > 0 ? (
+                <ul className="space-y-3 text-sm text-text-secondary">
+                  {roomOccupancyList.map((item) => (
+                    <li key={item.room} className="flex items-center justify-between">
+                      <div>
+                        <p className="font-semibold text-text-primary">{item.room}</p>
+                        <p>{item.players} jugador(es) en {item.activePlays} mesa(s)</p>
+                      </div>
+                      <span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
+                        {item.activePlays}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
+                  No hay partidas en curso ahora mismo.
+                </p>
+              )}
             </div>
           </section>
 
@@ -337,20 +678,22 @@ export function Statistics() {
             <p className="text-sm text-text-secondary">
               Ranking calculado con partidas confirmadas. Útil para destacar títulos populares o asignar copias adicionales.
             </p>
-            <div className="grid gap-4 md:grid-cols-3">
-              {topGames.map((game) => (
-                <div key={game.title} className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
-                  <GameTitle
-                    name={game.title}
-                    size="sm"
-                    textClassName="text-base"
-                  />
-                  <p className="mt-2">{game.plays} partidas registradas</p>
-                  <p>{game.players} jugadores únicos</p>
-                  <p>Tiempo acumulado: {game.time}</p>
-                </div>
-              ))}
-            </div>
+            {topGames.length > 0 ? (
+              <div className="grid gap-4 md:grid-cols-3">
+                {topGames.map((game) => (
+                  <div key={game.title} className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
+                    <GameTitle name={game.title} size="sm" textClassName="text-base" />
+                    <p className="mt-2">{game.plays} partida(s) registradas</p>
+                    <p>{game.players} jugador(es) implicados</p>
+                    <p>Tiempo acumulado: {game.minutes > 0 ? formatMinutes(game.minutes) : '—'}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
+                Aún no hay suficientes partidas registradas para generar un ranking.
+              </p>
+            )}
           </section>
         </div>
       ) : (
@@ -379,39 +722,56 @@ export function Statistics() {
                 Controla tu ritmo de partidas y tiempo invertido para equilibrar descansos y nuevos encuentros.
               </p>
               <div className="space-y-3" aria-hidden="true">
-                {personalActivity.map((item) => (
-                  <div key={item.day} className="space-y-1">
-                    <div className="flex items-center justify-between text-sm text-text-secondary">
-                      <span className="font-semibold text-text-primary">{item.day}</span>
-                      <span>{item.plays} partidas · {formatMinutes(item.minutes)}</span>
-                    </div>
-                    <div className="h-2 rounded-full bg-primary/10">
-                      <div
-                        className="h-full rounded-full bg-primary"
-                        style={{ width: `${(item.plays / maxPersonalPlays) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
+                {hasPersonalActivity ? (
+                  personalActivity
+                    .filter((item) => item.plays > 0)
+                    .map((item) => (
+                      <div key={item.label} className="space-y-1">
+                        <div className="flex items-center justify-between text-sm text-text-secondary">
+                          <span className="font-semibold text-text-primary">{item.label}</span>
+                          <span>
+                            {item.plays} partida(s) ·{' '}
+                            {item.minutes > 0 ? formatMinutes(item.minutes) : '—'}
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-primary/10">
+                          <div
+                            className="h-full rounded-full bg-primary"
+                            style={{ width: `${(item.plays / maxPersonalPlays) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))
+                ) : (
+                  <p className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
+                    Registra tu primera partida para ver la evolución por franjas horarias.
+                  </p>
+                )}
               </div>
               <p className="sr-only">Tu evolución: {personalSummary}.</p>
             </div>
 
             <div className="card space-y-4 p-5">
               <h3 className="text-lg font-semibold text-text-primary">Compañeros frecuentes</h3>
-              <ul className="space-y-3 text-sm text-text-secondary">
-                {partnerStats.map((partner) => (
-                  <li key={partner.name} className="flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold text-text-primary">{partner.name}</p>
-                      <p>{partner.plays} partidas en común</p>
-                    </div>
-                    <span className="rounded-full bg-secondary/20 px-3 py-1 text-xs font-semibold text-secondary">
-                      {formatMinutes(partner.sharedMinutes)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              {partnerStats.length > 0 ? (
+                <ul className="space-y-3 text-sm text-text-secondary">
+                  {partnerStats.map((partner) => (
+                    <li key={partner.name} className="flex items-center justify-between">
+                      <div>
+                        <p className="font-semibold text-text-primary">{partner.name}</p>
+                        <p>{partner.plays} partida(s) en común</p>
+                      </div>
+                      <span className="rounded-full bg-secondary/20 px-3 py-1 text-xs font-semibold text-secondary">
+                        {partner.sharedMinutes > 0 ? formatMinutes(partner.sharedMinutes) : '—'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
+                  Cuando compartas mesa con otros asistentes, verás aquí a tus compañeros habituales.
+                </p>
+              )}
             </div>
           </section>
 

@@ -12,6 +12,13 @@ import {
 import { useCallback, useEffect, useState } from 'react'
 import { db } from '../utils/firebase'
 
+export type PlaysFilter = {
+  dayStart?: Date
+  dayEnd?: Date
+  status?: PlayStatus | 'all'
+  room?: string | null
+}
+
 export type PlayStatus = 'in-progress' | 'completed'
 
 export type PlayChronicles = Record<string, string>
@@ -379,20 +386,64 @@ export async function completePlay(playId: string, input: CompletePlayInput): Pr
   return updated
 }
 
-export async function listActivePlays(): Promise<PlayRecord[]> {
+export async function listPlays(filters: PlaysFilter = {}): Promise<PlayRecord[]> {
   if (useFirestore && playsCollectionRef) {
     try {
-      const snapshot = await getDocs(
-        query(playsCollectionRef, where('status', '==', 'in-progress'), orderBy('recordedAt', 'desc')),
-      )
-      return snapshot.docs.map((document) => mapFirestorePlay(document.id, document.data() as Record<string, unknown>))
+      const constraints = [orderBy('recordedAt', 'desc')]
+
+      if (filters.status && filters.status !== 'all') {
+        constraints.push(where('status', '==', filters.status))
+      }
+
+      if (filters.room && filters.room.trim()) {
+        constraints.push(where('room', '==', filters.room.trim()))
+      }
+
+      const snapshot = await getDocs(query(playsCollectionRef, ...constraints))
+      const plays = snapshot.docs.map((document) => mapFirestorePlay(document.id, document.data() as Record<string, unknown>))
+
+      return plays.filter((play) => {
+        if (filters.dayStart && Date.parse(play.startTime) < filters.dayStart.getTime()) {
+          return false
+        }
+
+        if (filters.dayEnd && Date.parse(play.startTime) > filters.dayEnd.getTime()) {
+          return false
+        }
+
+        return true
+      })
     } catch (error) {
-      console.error('No se pudieron obtener las partidas activas', error)
+      console.error('No se pudieron obtener las partidas', error)
       return []
     }
   }
 
-  return readLocalPlays().filter((play) => play.status === 'in-progress')
+  return readLocalPlays()
+    .filter((play) => {
+      if (filters.status && filters.status !== 'all' && play.status !== filters.status) {
+        return false
+      }
+
+      if (filters.room && filters.room.trim() && play.room !== filters.room.trim()) {
+        return false
+      }
+
+      if (filters.dayStart && Date.parse(play.startTime) < filters.dayStart.getTime()) {
+        return false
+      }
+
+      if (filters.dayEnd && Date.parse(play.startTime) > filters.dayEnd.getTime()) {
+        return false
+      }
+
+      return true
+    })
+    .sort((first, second) => Date.parse(second.startTime) - Date.parse(first.startTime))
+}
+
+export async function listActivePlays(filters: Omit<PlaysFilter, 'status'> = {}): Promise<PlayRecord[]> {
+  return listPlays({ ...filters, status: 'in-progress' })
 }
 
 export function summarizeRoomOccupancy(plays: PlayRecord[]): RoomOccupancySummary {
