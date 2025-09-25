@@ -202,13 +202,16 @@ export function Board() {
           <p className="text-sm text-text-secondary">
             Rellena los detalles principales para que otras personas puedan unirse rápidamente a tu partida.
           </p>
-          <form onSubmit={handleCreateTable} className="grid gap-4 md:grid-cols-2">
+          <form noValidate onSubmit={handleCreateTable} className="grid gap-4 md:grid-cols-2">
             <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
               <span className="text-xs uppercase tracking-wide">Juego</span>
               <input
                 className="w-full bg-transparent text-base text-text-primary outline-none"
                 value={newTable.game}
-                onChange={(event) => setNewTable((current) => ({ ...current, game: event.currentTarget.value }))}
+                onChange={(event) => {
+                  const { value } = event.currentTarget
+                  setNewTable((current) => ({ ...current, game: value }))
+                }}
                 placeholder="Nombre del juego"
                 required
               />
@@ -218,7 +221,10 @@ export function Board() {
               <input
                 className="w-full bg-transparent text-base text-text-primary outline-none"
                 value={newTable.host}
-                onChange={(event) => setNewTable((current) => ({ ...current, host: event.currentTarget.value }))}
+                onChange={(event) => {
+                  const { value } = event.currentTarget
+                  setNewTable((current) => ({ ...current, host: value }))
+                }}
                 placeholder="Tu nombre o alias"
               />
             </label>
@@ -230,9 +236,10 @@ export function Board() {
                 max={8}
                 className="w-full bg-transparent text-base text-text-primary outline-none"
                 value={newTable.seats}
-                onChange={(event) =>
-                  setNewTable((current) => ({ ...current, seats: Number(event.currentTarget.value) || 1 }))
-                }
+                onChange={(event) => {
+                  const { value } = event.currentTarget
+                  setNewTable((current) => ({ ...current, seats: Number(value) || 1 }))
+                }}
               />
             </label>
             <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
@@ -240,7 +247,10 @@ export function Board() {
               <input
                 className="w-full bg-transparent text-base text-text-primary outline-none"
                 value={newTable.start}
-                onChange={(event) => setNewTable((current) => ({ ...current, start: event.currentTarget.value }))}
+                onChange={(event) => {
+                  const { value } = event.currentTarget
+                  setNewTable((current) => ({ ...current, start: value }))
+                }}
                 placeholder="Ej. 19:30"
               />
             </label>
@@ -249,7 +259,10 @@ export function Board() {
               <input
                 className="w-full bg-transparent text-base text-text-primary outline-none"
                 value={newTable.room}
-                onChange={(event) => setNewTable((current) => ({ ...current, room: event.currentTarget.value }))}
+                onChange={(event) => {
+                  const { value } = event.currentTarget
+                  setNewTable((current) => ({ ...current, room: value }))
+                }}
                 placeholder="Sala o ubicación"
               />
             </label>
@@ -258,7 +271,10 @@ export function Board() {
               <textarea
                 className="h-24 w-full resize-none bg-transparent text-sm text-text-secondary outline-none"
                 value={newTable.description}
-                onChange={(event) => setNewTable((current) => ({ ...current, description: event.currentTarget.value }))}
+                onChange={(event) => {
+                  const { value } = event.currentTarget
+                  setNewTable((current) => ({ ...current, description: value }))
+                }}
                 placeholder="Añade detalles relevantes: nivel, módulos, si explicas reglas..."
                 required
               />
@@ -303,7 +319,10 @@ export function Board() {
               <select
                 className="mt-2 w-full bg-transparent text-base text-text-primary outline-none"
                 value={filters.room}
-                onChange={(event) => setFilters((current) => ({ ...current, room: event.currentTarget.value }))}
+                onChange={(event) => {
+                  const { value } = event.currentTarget
+                  setFilters((current) => ({ ...current, room: value }))
+                }}
               >
                 {availableRooms.map((roomOption) => (
                   <option key={roomOption} value={roomOption}>

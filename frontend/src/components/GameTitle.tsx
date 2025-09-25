@@ -1,6 +1,6 @@
 import { clsx } from 'clsx'
 import { resolveGameCover } from '../utils/gameCovers'
-import type { HTMLAttributes, ReactNode } from 'react'
+import { useId, type HTMLAttributes, type ReactNode } from 'react'
 
 type GameTitleSize = 'sm' | 'md' | 'lg'
 
@@ -35,12 +35,26 @@ export function GameTitle({
   children,
   ...rest
 }: GameTitleProps) {
+  const generatedLabelId = useId()
+  const { 'aria-label': ariaLabel, 'aria-labelledby': ariaLabelledBy, ...spanProps } = rest
+  const shouldGenerateLabel = !ariaLabel && !ariaLabelledBy
+  const labelledByProps = ariaLabelledBy
+    ? { 'aria-labelledby': ariaLabelledBy }
+    : shouldGenerateLabel
+      ? { 'aria-labelledby': generatedLabelId }
+      : {}
+
   const resolvedCover = resolveGameCover(name, coverUrl)
   const coverSizeClass = COVER_SIZES[size]
   const resolvedTextClass = textClassName ?? TEXT_DEFAULTS[size]
 
   return (
-    <span className={clsx('inline-flex items-center gap-3', className)} {...rest}>
+    <span
+      className={clsx('inline-flex items-center gap-3', className)}
+      aria-label={ariaLabel}
+      {...labelledByProps}
+      {...spanProps}
+    >
       <img
         src={resolvedCover}
         alt={`Portada de ${name}`}
@@ -48,7 +62,12 @@ export function GameTitle({
         loading="lazy"
       />
       <span className="flex flex-col gap-1">
-        <span className={clsx('font-semibold text-text-primary', resolvedTextClass)}>{name}</span>
+        <span
+          className={clsx('font-semibold text-text-primary', resolvedTextClass)}
+          id={shouldGenerateLabel ? generatedLabelId : undefined}
+        >
+          {name}
+        </span>
         {children}
       </span>
     </span>
