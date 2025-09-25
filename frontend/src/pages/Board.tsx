@@ -1,69 +1,61 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { CalendarCheck, Clock, MapPin, Plus } from 'lucide-react'
 import { GameTitle } from '../components/GameTitle'
+import { useTablesService, type TableActionStatus, type TableRecord } from '../services/tables'
 
-type Table = {
-  id: number
+type FilterState = {
+  hideFull: boolean
+  hideJoined: boolean
+  room: string
+}
+
+type NewTableState = {
   game: string
   host: string
-  seats: {
-    taken: number
-    total: number
-  }
+  seats: number
   start: string
   room: string
   description: string
-  joined?: boolean
 }
 
-const initialTables: Table[] = [
-  {
-    id: 1,
-    game: 'Revive',
-    host: 'Lucía',
-    seats: { taken: 2, total: 4 },
-    start: '18:00',
-    room: 'Sala Verde',
-    description: 'Buscamos jugadoras con experiencia previa. Partida avanzada con módulos.',
-  },
-  {
-    id: 2,
-    game: 'Scout',
-    host: 'Javi',
-    seats: { taken: 1, total: 5 },
-    start: 'En cuanto estemos',
-    room: 'Lobby',
-    description: 'Ideal para partidas rápidas entre actividades. Explicación incluida.',
-  },
-  {
-    id: 3,
-    game: 'Earth',
-    host: 'Marta',
-    seats: { taken: 3, total: 4 },
-    start: '19:30',
-    room: 'Sala Azul',
-    description: 'Buscamos un último hueco. Explicamos reglas y usamos expansión Boreal.',
-  },
-]
+type FeedbackTone = 'success' | 'warning' | 'error'
+
+type ActionFeedback = {
+  message: string
+  tone: FeedbackTone
+}
+
+const INITIAL_FILTERS: FilterState = {
+  hideFull: false,
+  hideJoined: false,
+  room: 'Todas',
+}
+
+const INITIAL_NEW_TABLE: NewTableState = {
+  game: '',
+  host: 'Tú',
+  seats: 4,
+  start: '',
+  room: '',
+  description: '',
+}
+
+const FEEDBACK_TONE_STYLES: Record<FeedbackTone, string> = {
+  success: 'border-success/30 bg-success/10 text-success focus-visible:outline-success',
+  warning: 'border-secondary/30 bg-secondary/10 text-secondary focus-visible:outline-secondary',
+  error: 'border-error/30 bg-error/10 text-error focus-visible:outline-error',
+}
 
 export function Board() {
-  const [tables, setTables] = useState<Table[]>(() => initialTables.map((table) => ({ ...table, joined: false })))
+  const { tables, loading, error, refresh, createTable, joinTable } = useTablesService()
+  const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS)
   const [showFilters, setShowFilters] = useState(false)
   const [showCreateForm, setShowCreateForm] = useState(false)
-  const [actionMessage, setActionMessage] = useState<string | null>(null)
-  const [filters, setFilters] = useState({
-    hideFull: false,
-    hideJoined: false,
-    room: 'Todas',
-  })
-  const [newTable, setNewTable] = useState({
-    game: '',
-    host: 'Tú',
-    seats: 4,
-    start: '',
-    room: '',
-    description: '',
-  })
+  const [newTable, setNewTable] = useState<NewTableState>(INITIAL_NEW_TABLE)
+  const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null)
+  const [pendingJoinId, setPendingJoinId] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const actionMessageRef = useRef<HTMLDivElement | null>(null)
 
   const availableRooms = useMemo(() => {
     const rooms = new Set<string>()
@@ -77,31 +69,23 @@ export function Board() {
   }, [tables])
 
   const filteredTables = useMemo(() => {
-    return tables.filter((table) => {
-      if (filters.hideFull && table.seats.taken >= table.seats.total) {
-        return false
-      }
-
-      if (filters.hideJoined && table.joined) {
-        return false
-      }
-
-      if (filters.room !== 'Todas' && table.room !== filters.room) {
-        return false
-      }
-
-      return true
-    })
-  }, [filters.hideFull, filters.hideJoined, filters.room, tables])
+    return tables.filter((table) => shouldIncludeTable(table, filters))
+  }, [filters, tables])
 
   useEffect(() => {
-    if (!actionMessage) {
+    if (!actionFeedback) {
       return
     }
 
-    const timeout = setTimeout(() => setActionMessage(null), 4000)
+    const timeout = setTimeout(() => setActionFeedback(null), 4000)
     return () => clearTimeout(timeout)
-  }, [actionMessage])
+  }, [actionFeedback])
+
+  useEffect(() => {
+    if (actionFeedback && actionMessageRef.current) {
+      actionMessageRef.current.focus()
+    }
+  }, [actionFeedback])
 
   const createButtonLabel = showCreateForm ? 'Cerrar formulario' : 'Publicar anuncio'
 
@@ -109,79 +93,76 @@ export function Board() {
     setFilters((current) => ({ ...current, [key]: value }))
   }
 
-  function handleJoin(tableId: number) {
-    setTables((current) => {
-      let joinedGame: string | null = null
-      const next = current.map((table) => {
-        if (table.id !== tableId) {
-          return table
-        }
-
-        if (table.joined) {
-          joinedGame = `${table.game}: ya estás apuntado`
-          return table
-        }
-
-        if (table.seats.taken >= table.seats.total) {
-          joinedGame = `${table.game}: no quedan plazas libres`
-          return table
-        }
-
-        joinedGame = `${table.game}: plaza reservada`
-        return {
-          ...table,
-          seats: { ...table.seats, taken: table.seats.taken + 1 },
-          joined: true,
-        }
+  async function handleJoin(tableId: string) {
+    setPendingJoinId(tableId)
+    try {
+      const result = await joinTable(tableId)
+      setActionFeedback({
+        message: result.message,
+        tone: mapStatusToTone(result.status),
       })
-
-      if (joinedGame) {
-        setActionMessage(joinedGame)
-      }
-
-      return next
-    })
+    } finally {
+      setPendingJoinId(null)
+    }
   }
 
-  function handleCreateTable(event: FormEvent<HTMLFormElement>) {
+  async function handleCreateTable(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const trimmedGame = newTable.game.trim()
     const trimmedRoom = newTable.room.trim()
     const trimmedDescription = newTable.description.trim()
+    const trimmedHost = newTable.host.trim()
+    const trimmedStart = newTable.start.trim()
 
     if (!trimmedGame) {
-      setActionMessage('Indica el juego antes de publicar el anuncio.')
+      setActionFeedback({
+        message: 'Indica el juego antes de publicar el anuncio.',
+        tone: 'error',
+      })
       return
     }
 
     if (!trimmedDescription) {
-      setActionMessage('Describe la mesa para que otras personas sepan qué esperar.')
+      setActionFeedback({
+        message: 'Describe la mesa para que otras personas sepan qué esperar.',
+        tone: 'error',
+      })
       return
     }
 
     const totalSeats = Math.max(1, Number.isFinite(newTable.seats) ? Math.floor(newTable.seats) : 4)
 
-    setTables((current) => [
-      {
-        id: Date.now(),
+    setSubmitting(true)
+    try {
+      const result = await createTable({
         game: trimmedGame,
-        host: newTable.host.trim() || 'Tú',
-        seats: {
-          total: totalSeats,
-          taken: Math.min(totalSeats, 1),
-        },
-        start: newTable.start.trim() || 'Por confirmar',
+        host: trimmedHost || 'Tú',
+        seats: totalSeats,
+        start: trimmedStart || 'Por confirmar',
         room: trimmedRoom || 'Por confirmar',
         description: trimmedDescription,
-        joined: true,
-      },
-      ...current,
-    ])
+      })
 
-    setNewTable({ game: '', host: 'Tú', seats: 4, start: '', room: '', description: '' })
-    setShowCreateForm(false)
-    setActionMessage('Mesa publicada y plaza reservada para ti.')
+      setActionFeedback({
+        message: result.message,
+        tone: mapStatusToTone(result.status),
+      })
+
+      if (result.status === 'success') {
+        setNewTable(INITIAL_NEW_TABLE)
+        setShowCreateForm(false)
+      }
+    } finally {
+      setSubmitting(false)
+    }
   }
+
+  async function handleRetry() {
+    setActionFeedback(null)
+    await refresh()
+  }
+
+  const hasNoTables = !loading && filteredTables.length === 0
 
   return (
     <div className="space-y-6 pb-10">
@@ -203,15 +184,9 @@ export function Board() {
 
       <div className="card flex flex-wrap items-center justify-between gap-3 p-5 text-sm text-text-secondary">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="rounded-full bg-background px-3 py-1">
-            Sala: {filters.room}
-          </span>
-          <span className="rounded-full bg-background px-3 py-1">
-            Ocultar llenas: {filters.hideFull ? 'Sí' : 'No'}
-          </span>
-          <span className="rounded-full bg-background px-3 py-1">
-            Ocultar apuntadas: {filters.hideJoined ? 'Sí' : 'No'}
-          </span>
+          <span className="rounded-full bg-background px-3 py-1">Sala: {filters.room}</span>
+          <span className="rounded-full bg-background px-3 py-1">Ocultar llenas: {filters.hideFull ? 'Sí' : 'No'}</span>
+          <span className="rounded-full bg-background px-3 py-1">Ocultar apuntadas: {filters.hideJoined ? 'Sí' : 'No'}</span>
         </div>
         <button
           onClick={() => setShowFilters((value) => !value)}
@@ -222,7 +197,7 @@ export function Board() {
       </div>
 
       {showCreateForm && (
-        <section className="card space-y-4 p-5">
+        <section className="card space-y-4 p-5" aria-label="Publicar nueva mesa">
           <h3 className="text-lg font-semibold text-text-primary">Publicar nueva mesa</h3>
           <p className="text-sm text-text-secondary">
             Rellena los detalles principales para que otras personas puedan unirse rápidamente a tu partida.
@@ -291,9 +266,10 @@ export function Board() {
             <div className="md:col-span-2">
               <button
                 type="submit"
-                className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
+                disabled={submitting}
+                className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/60"
               >
-                Publicar mesa
+                {submitting ? 'Publicando...' : 'Publicar mesa'}
               </button>
             </div>
           </form>
@@ -301,7 +277,7 @@ export function Board() {
       )}
 
       {showFilters && (
-        <section className="card space-y-4 p-5">
+        <section className="card space-y-4 p-5" aria-label="Filtrar mesas">
           <h3 className="text-lg font-semibold text-text-primary">Filtrar mesas</h3>
           <div className="grid gap-3 md:grid-cols-3">
             <label className="flex items-center gap-3 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
@@ -340,72 +316,156 @@ export function Board() {
         </section>
       )}
 
-      {actionMessage && (
-        <div className="rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm font-medium text-primary">
-          {actionMessage}
+      {error && (
+        <div
+          role="alert"
+          className="rounded-2xl border border-error/40 bg-error/10 px-4 py-3 text-sm text-error"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>{error}</span>
+            <button
+              onClick={() => {
+                void handleRetry()
+              }}
+              className="rounded-full bg-error px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-error/80"
+            >
+              Reintentar
+            </button>
+          </div>
         </div>
       )}
 
-      <section className="space-y-4">
-        {filteredTables.map((table) => {
-          const freeSeats = Math.max(0, table.seats.total - table.seats.taken)
-          const isFull = freeSeats === 0
-          return (
-          <article key={table.id} className="card space-y-4 p-5">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="space-y-2">
-                <p className="text-xs uppercase tracking-wide text-text-secondary">Juego</p>
-                <GameTitle
-                  name={table.game}
-                  size="md"
-                  textClassName="text-xl"
-                  role="heading"
-                  aria-level={3}
-                >
-                  <p className="text-sm font-normal text-text-secondary">Anfitrión: {table.host}</p>
-                </GameTitle>
+      {actionFeedback && (
+        <div
+          ref={actionMessageRef}
+          tabIndex={-1}
+          role="status"
+          aria-live="assertive"
+          aria-atomic="true"
+          className={`rounded-2xl border px-4 py-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 ${FEEDBACK_TONE_STYLES[actionFeedback.tone]}`}
+        >
+          {actionFeedback.message}
+        </div>
+      )}
+
+      {loading && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="rounded-2xl border border-primary/20 bg-white px-4 py-3 text-sm text-text-secondary"
+        >
+          Cargando mesas disponibles...
+        </div>
+      )}
+
+      {hasNoTables && !loading && (
+        <section className="card space-y-3 p-5">
+          <h3 className="text-lg font-semibold text-text-primary">No hay mesas que coincidan con los filtros</h3>
+          <p className="text-sm text-text-secondary">
+            Modifica los filtros o publica un anuncio para que otras personas puedan unirse a tu partida.
+          </p>
+          <button
+            onClick={() => setShowCreateForm(true)}
+            className="inline-flex items-center gap-2 self-start rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
+          >
+            Publicar mesa
+          </button>
+        </section>
+      )}
+
+      {!hasNoTables && (
+        <section className="space-y-4 md:grid md:grid-cols-2 md:gap-4 md:space-y-0">
+          {filteredTables.map((table) => (
+            <article key={table.id} className="card space-y-4 p-5">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-wide text-text-secondary">Juego</p>
+                  <GameTitle
+                    name={table.game}
+                    size="md"
+                    textClassName="text-xl"
+                    role="heading"
+                    aria-level={3}
+                  >
+                    <p className="text-sm font-normal text-text-secondary">Anfitrión: {table.host}</p>
+                  </GameTitle>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
+                    {Math.max(0, table.seats.total - table.seats.taken)} plazas libres
+                  </span>
+                  <button
+                    onClick={() => {
+                      void handleJoin(table.id)
+                    }}
+                    disabled={table.seats.taken >= table.seats.total || table.joined || pendingJoinId === table.id}
+                    className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/60"
+                  >
+                    {pendingJoinId === table.id
+                      ? 'Reservando...'
+                      : table.joined
+                      ? 'Apuntado'
+                      : table.seats.taken >= table.seats.total
+                      ? 'Completa'
+                      : 'Apuntarme'}
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
-                  {freeSeats} plazas libres
-                </span>
-                <button
-                  onClick={() => handleJoin(table.id)}
-                  disabled={isFull || table.joined}
-                  className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/60"
-                >
-                  Apuntarme
-                </button>
+              <p className="text-sm text-text-secondary">{table.description}</p>
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
+                  <p className="flex items-center gap-2 text-text-primary">
+                    <Clock className="h-4 w-4" />
+                    {table.start}
+                  </p>
+                  <p>Inicio estimado</p>
+                </div>
+                <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
+                  <p className="flex items-center gap-2 text-text-primary">
+                    <MapPin className="h-4 w-4" />
+                    {table.room}
+                  </p>
+                  <p>Ubicación</p>
+                </div>
+                <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
+                  <p className="flex items-center gap-2 text-text-primary">
+                    <CalendarCheck className="h-4 w-4" />
+                    Se convierte en partida
+                  </p>
+                  <p>Tras confirmar plazas</p>
+                </div>
               </div>
-            </div>
-            <p className="text-sm text-text-secondary">{table.description}</p>
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
-                <p className="flex items-center gap-2 text-text-primary">
-                  <Clock className="h-4 w-4" />
-                  {table.start}
-                </p>
-                <p>Inicio estimado</p>
-              </div>
-              <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
-                <p className="flex items-center gap-2 text-text-primary">
-                  <MapPin className="h-4 w-4" />
-                  {table.room}
-                </p>
-                <p>Ubicación</p>
-              </div>
-              <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
-                <p className="flex items-center gap-2 text-text-primary">
-                  <CalendarCheck className="h-4 w-4" />
-                  Se convierte en partida
-                </p>
-                <p>Tras confirmar plazas</p>
-              </div>
-            </div>
-          </article>
-          )
-        })}
-      </section>
+            </article>
+          ))}
+        </section>
+      )}
     </div>
   )
+}
+
+function mapStatusToTone(status: TableActionStatus): FeedbackTone {
+  switch (status) {
+    case 'success':
+      return 'success'
+    case 'error':
+      return 'error'
+    default:
+      return 'warning'
+  }
+}
+
+function shouldIncludeTable(table: TableRecord, filters: FilterState) {
+  if (filters.hideFull && table.seats.taken >= table.seats.total) {
+    return false
+  }
+
+  if (filters.hideJoined && table.joined) {
+    return false
+  }
+
+  if (filters.room !== 'Todas' && table.room !== filters.room) {
+    return false
+  }
+
+  return true
 }
