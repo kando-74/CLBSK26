@@ -83,8 +83,8 @@ const builtinFilters: BuiltinFilter[] = [
 ]
 
 export function Library() {
-  const { user, profile } = useAuth()
-  const userDisplayName = useMemo(() => getDisplayName(profile, user), [profile, user])
+  const { user, profile, localAlias } = useAuth()
+  const userDisplayName = useMemo(() => getDisplayName(profile, user, localAlias), [localAlias, profile, user])
   const userId = user?.uid ?? null
 
   const { createTable } = useTablesService()

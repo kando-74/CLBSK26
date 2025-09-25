@@ -14,7 +14,7 @@ type PreferencesState = {
 }
 
 export function Profile() {
-  const { user, profile, profileLoading, authorized, signOut } = useAuth()
+  const { user, profile, profileLoading, authorized, localAlias, updateLocalAlias, signOut } = useAuth()
   const [alias, setAlias] = useState('')
   const [language, setLanguage] = useState<'es' | 'en'>('es')
   const [bio, setBio] = useState('')
@@ -26,9 +26,11 @@ export function Profile() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const [localAliasInput, setLocalAliasInput] = useState(localAlias ?? '')
+  const [localAliasMessage, setLocalAliasMessage] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!profileLoading) {
+    if (!profileLoading && user) {
       setAlias(profile?.alias ?? '')
       setLanguage((profile?.language as 'es' | 'en' | undefined) ?? 'es')
       setBio(profile?.bio ?? '')
@@ -38,7 +40,11 @@ export function Profile() {
         availableToPlay: profile?.preferences?.availableToPlay ?? false,
       })
     }
-  }, [profile, profileLoading])
+  }, [profile, profileLoading, user])
+
+  useEffect(() => {
+    setLocalAliasInput(localAlias ?? '')
+  }, [localAlias])
 
   useEffect(() => {
     if (saveMessage) {
@@ -46,6 +52,13 @@ export function Profile() {
       return () => clearTimeout(timeout)
     }
   }, [saveMessage])
+
+  useEffect(() => {
+    if (localAliasMessage) {
+      const timeout = setTimeout(() => setLocalAliasMessage(null), 3000)
+      return () => clearTimeout(timeout)
+    }
+  }, [localAliasMessage])
 
   const initials = useMemo(() => {
     if (alias) {
@@ -107,6 +120,68 @@ export function Profile() {
 
   const handleSignOut = () => {
     signOut().catch(() => undefined)
+  }
+
+  const handleLocalAliasSave = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const normalized = localAliasInput.trim()
+    if (!normalized) {
+      setLocalAliasMessage('Introduce un alias antes de guardar.')
+      return
+    }
+
+    updateLocalAlias(normalized)
+    setLocalAliasMessage('Alias guardado para esta sesión local.')
+  }
+
+  if (!user) {
+    return (
+      <div className="space-y-6 pb-10">
+        <header className="flex flex-col gap-2">
+          <h2 className="section-title">Tu alias en este dispositivo</h2>
+          <p className="text-sm text-text-secondary">
+            Mientras la autenticación real no esté disponible, define un nombre que identifique tus acciones en la app.
+          </p>
+        </header>
+
+        <form onSubmit={handleLocalAliasSave} className="card space-y-4 p-6 max-w-xl">
+          <label className="flex flex-col gap-2 text-sm text-text-secondary">
+            <span className="text-xs uppercase tracking-wide">Alias visible</span>
+            <input
+              className="rounded-2xl border border-primary/20 px-4 py-3 text-base text-text-primary outline-none"
+              value={localAliasInput}
+              onChange={(event) => setLocalAliasInput(event.currentTarget.value)}
+              placeholder="Introduce un alias público"
+              minLength={2}
+              required
+            />
+          </label>
+          <p className="text-xs text-text-secondary">
+            Guardamos este alias únicamente en tu dispositivo para que aparezca en la ludoteca, el tablón y el chat.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
+            >
+              Guardar alias local
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLocalAliasInput('')
+                updateLocalAlias('')
+                setLocalAliasMessage('Alias local borrado.')
+              }}
+              className="rounded-full px-4 py-2 text-sm font-semibold text-text-secondary transition-colors hover:bg-primary/10 hover:text-primary"
+            >
+              Borrar
+            </button>
+          </div>
+          {localAliasMessage && <p className="text-sm text-text-secondary">{localAliasMessage}</p>}
+        </form>
+      </div>
+    )
   }
 
   return (

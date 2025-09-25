@@ -11,10 +11,16 @@ export type AuthUserLike = {
 export function getDisplayName(
   profile: UserProfileLike | null | undefined,
   user: AuthUserLike | null | undefined,
+  localAlias?: string | null,
 ): string {
   const alias = profile?.alias?.trim()
   if (alias) {
     return alias
+  }
+
+  const fallbackAlias = localAlias?.trim()
+  if (fallbackAlias) {
+    return fallbackAlias
   }
 
   const fullName = profile?.fullName?.trim()

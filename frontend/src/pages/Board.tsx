@@ -50,8 +50,8 @@ const FEEDBACK_TONE_STYLES: Record<FeedbackTone, string> = {
 }
 
 export function Board() {
-  const { user, profile } = useAuth()
-  const userDisplayName = useMemo(() => getDisplayName(profile, user), [profile, user])
+  const { user, profile, localAlias } = useAuth()
+  const userDisplayName = useMemo(() => getDisplayName(profile, user, localAlias), [localAlias, profile, user])
   const { tables, loading, error, refresh, createTable, joinTable } = useTablesService()
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS)
   const [showFilters, setShowFilters] = useState(false)
