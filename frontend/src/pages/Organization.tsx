@@ -377,9 +377,14 @@ export function Organization() {
     return () => clearTimeout(timeout)
   }, [panelMessage])
 
-  const updateLivePlays = useCallback(() => {
-    setActivePlays(listActivePlays())
-    setRoomSummary(summarizeRoomOccupancy())
+  const updateLivePlays = useCallback(async () => {
+    try {
+      const active = await listActivePlays()
+      setActivePlays(active)
+      setRoomSummary(summarizeRoomOccupancy(active))
+    } catch (error) {
+      console.error('No se pudieron actualizar las partidas en vivo', error)
+    }
   }, [])
 
   useEffect(() => {
@@ -414,16 +419,18 @@ export function Organization() {
   }, [])
 
   useEffect(() => {
-    updateLivePlays()
+    void updateLivePlays()
     if (typeof window === 'undefined') {
       return
     }
 
-    const interval = window.setInterval(updateLivePlays, 10000)
+    const interval = window.setInterval(() => {
+      void updateLivePlays()
+    }, 10000)
 
     const handler = (event: StorageEvent) => {
       if (event.key === 'clbsk_event_plays_v1') {
-        updateLivePlays()
+        void updateLivePlays()
       }
     }
 

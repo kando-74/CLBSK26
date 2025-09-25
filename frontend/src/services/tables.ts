@@ -138,6 +138,7 @@ const forceLocalTables = import.meta.env.VITE_FORCE_LOCAL_TABLES === 'true'
 const isTestEnvironment = import.meta.env.MODE === 'test'
 const useFirestore = !forceLocalTables && !isTestEnvironment
 const tablesCollectionRef = useFirestore ? collection(db, FIRESTORE_COLLECTION) : null
+const playsCollectionRef = useFirestore ? collection(db, 'boardPlays') : null
 
 const seedTables: StoredTable[] = [
   {
@@ -676,6 +677,277 @@ async function joinTableInFirestore(
   }
 }
 
+function sanitizeChroniclesRecord(value: TableChronicles | unknown): TableChronicles {
+  if (!value || typeof value !== 'object') {
+    return {}
+  }
+
+  const sanitized: TableChronicles = {}
+  Object.entries(value as TableChronicles).forEach(([name, text]) => {
+    if (typeof name !== 'string' || typeof text !== 'string') {
+      return
+    }
+
+    const trimmedName = name.trim()
+    const trimmedText = text.trim()
+    if (!trimmedName || !trimmedText) {
+      return
+    }
+
+    sanitized[trimmedName] = trimmedText
+  })
+
+  return sanitized
+}
+
+async function startTableInFirestore(
+  tableId: string,
+  deviceId: string,
+  input: StartTableInput,
+): Promise<TableActionResult> {
+  if (!tablesCollectionRef) {
+    return {
+      status: 'error',
+      message: 'No se pudo iniciar la partida. Revisa tu conexión.',
+    }
+  }
+
+  const playerNames = normalizePlayerNames(input.players)
+  if (playerNames.length === 0) {
+    return {
+      status: 'error',
+      message: 'Selecciona al menos una persona que vaya a jugar.',
+    }
+  }
+
+  const startDate = input.startTime && !Number.isNaN(Date.parse(input.startTime))
+    ? new Date(Date.parse(input.startTime))
+    : new Date()
+  const startIso = startDate.toISOString()
+  const startLabel = formatTimeLabelFromDate(startDate)
+  const resolvedRoom = input.room.trim()
+
+  const playDocRef = playsCollectionRef ? doc(playsCollectionRef) : null
+
+  try {
+    const result = await runTransaction<TableActionResult>(db, async (transaction) => {
+      const tableRef = doc(tablesCollectionRef, tableId)
+      const snapshot = await transaction.get(tableRef)
+
+      if (!snapshot.exists()) {
+        return {
+          status: 'error',
+          message: 'La mesa ya no está disponible.',
+        }
+      }
+
+      const rawData = snapshot.data() as FirestoreTable
+      const status = rawData.status ?? 'open'
+      if (status !== 'open') {
+        return {
+          status: 'error',
+          message: `${rawData.game}: la partida ya está en marcha o finalizada.`,
+          data: rawData,
+        }
+      }
+
+      const normalizedData: FirestoreTable = {
+        ...rawData,
+        participants: Array.isArray(rawData.participants) ? rawData.participants.slice() : [],
+      }
+
+      const existingParticipants = normalizedData.participants ?? []
+      const seen = new Set(existingParticipants.map((participant) => participant.name.toLowerCase()))
+      playerNames.forEach((name) => {
+        const lower = name.toLowerCase()
+        if (!seen.has(lower)) {
+          existingParticipants.push({ deviceId: null, name })
+          seen.add(lower)
+        }
+      })
+
+      const currentPlayers = playerNames.map((name) => ({ deviceId: null, name }))
+
+      const updatedData: FirestoreTable = {
+        ...normalizedData,
+        participants: existingParticipants,
+        currentPlayers,
+        status: 'in-progress',
+        activePlayId: playDocRef ? playDocRef.id : normalizedData.activePlayId ?? null,
+        room: resolvedRoom || normalizedData.room,
+        start: startLabel,
+        startedAt: Date.now(),
+        completedAt: null,
+        resultSummary: null,
+        chronicles: {},
+        updatedAt: Date.now(),
+      }
+
+      transaction.update(tableRef, {
+        participants: updatedData.participants,
+        currentPlayers,
+        status: updatedData.status,
+        activePlayId: updatedData.activePlayId,
+        room: updatedData.room,
+        start: updatedData.start,
+        startedAt: updatedData.startedAt,
+        completedAt: null,
+        resultSummary: null,
+        chronicles: {},
+        updatedAt: updatedData.updatedAt,
+      })
+
+      if (playDocRef) {
+        transaction.set(playDocRef, {
+          tableId,
+          game: normalizedData.game,
+          gameLower: normalizedData.game.trim().toLowerCase(),
+          players: playerNames,
+          room: updatedData.room,
+          startTime: startIso,
+          durationMinutes: normalizedData.seats?.total ? Math.min(normalizedData.seats.total * 20, 240) : null,
+          notes: normalizedData.description ?? null,
+          recordedAt: Date.now(),
+          status: 'in-progress',
+          resultSummary: null,
+          chronicles: {},
+          endedAt: null,
+        })
+      }
+
+      return {
+        status: 'success',
+        message: 'Partida iniciada. ¡Buen juego!',
+        table: mapFirestoreTable(tableId, updatedData, true),
+      }
+    })
+
+    void logActivity(
+      {
+        type: 'table:start',
+        entityId: tableId,
+        entityName: result.table?.game ?? 'Partida',
+        message: 'La partida ha comenzado',
+        metadata: {
+          room: result.table?.room,
+          players: playerNames.length,
+        },
+      },
+      { deviceId },
+    )
+
+    return result
+  } catch (error) {
+    console.error('No se pudo iniciar la partida', error)
+    return {
+      status: 'error',
+      message: 'No se pudo iniciar la partida. Inténtalo de nuevo.',
+    }
+  }
+}
+
+async function completeTableInFirestore(
+  tableId: string,
+  deviceId: string,
+  input: CompleteTableInput,
+): Promise<TableActionResult> {
+  if (!tablesCollectionRef) {
+    return {
+      status: 'error',
+      message: 'No se pudo cerrar la partida. Revisa tu conexión.',
+    }
+  }
+
+  const sanitizedChronicles = sanitizeChroniclesRecord(input.chronicles)
+  const resultSummary = input.result.trim()
+  const completedAt = Date.now()
+  const endedAtIso = input.endedAt && !Number.isNaN(Date.parse(input.endedAt))
+    ? new Date(input.endedAt).toISOString()
+    : new Date(completedAt).toISOString()
+
+  try {
+    const result = await runTransaction<TableActionResult>(db, async (transaction) => {
+      const tableRef = doc(tablesCollectionRef, tableId)
+      const snapshot = await transaction.get(tableRef)
+
+      if (!snapshot.exists()) {
+        return {
+          status: 'error',
+          message: 'La mesa ya no está disponible.',
+        }
+      }
+
+      const rawData = snapshot.data() as FirestoreTable
+      if ((rawData.status ?? 'open') !== 'in-progress') {
+        return {
+          status: 'error',
+          message: `${rawData.game}: la mesa no está marcada como en juego.`,
+          data: rawData,
+        }
+      }
+
+      const updatedData: FirestoreTable = {
+        ...rawData,
+        status: 'completed',
+        activePlayId: null,
+        currentPlayers: [],
+        completedAt,
+        resultSummary: resultSummary || null,
+        chronicles: sanitizedChronicles,
+        updatedAt: completedAt,
+      }
+
+      transaction.update(tableRef, {
+        status: updatedData.status,
+        activePlayId: null,
+        currentPlayers: [],
+        completedAt: updatedData.completedAt,
+        resultSummary: updatedData.resultSummary,
+        chronicles: sanitizedChronicles,
+        updatedAt: updatedData.updatedAt,
+      })
+
+      if (rawData.activePlayId && playsCollectionRef) {
+        const playRef = doc(playsCollectionRef, rawData.activePlayId)
+        transaction.update(playRef, {
+          status: 'completed',
+          resultSummary: resultSummary || null,
+          chronicles: sanitizedChronicles,
+          endedAt: endedAtIso,
+        })
+      }
+
+      return {
+        status: 'success',
+        message: 'Partida finalizada y registrada correctamente.',
+        table: mapFirestoreTable(tableId, updatedData, true),
+      }
+    })
+
+    void logActivity(
+      {
+        type: 'table:finish',
+        entityId: tableId,
+        entityName: result.table?.game ?? 'Partida',
+        message: 'La partida ha finalizado',
+        metadata: {
+          result: resultSummary || 'Partida cerrada',
+          chronicles: Object.keys(sanitizedChronicles).length,
+        },
+      },
+      { deviceId },
+    )
+
+    return result
+  } catch (error) {
+    console.error('No se pudo finalizar la partida', error)
+    return {
+      status: 'error',
+      message: 'No se pudo finalizar la partida. Inténtalo de nuevo.',
+    }
+  }
+}
+
 function mapFirestoreTable(id: string, data: FirestoreTable, joined: boolean): TableRecord {
   const totalSeats = clampSeats(data.seats?.total ?? 4, MAX_TOTAL_SEATS)
   const takenSeats = clampSeats(data.seats?.taken ?? 0, totalSeats)
@@ -919,10 +1191,8 @@ export async function startTableEntry(tableId: string, input: StartTableInput): 
   await simulateDelay(150)
 
   if (useFirestore) {
-    return {
-      status: 'error',
-      message: 'La sincronización remota de partidas se habilitará en una próxima versión.',
-    }
+    const deviceId = getClientDeviceId()
+    return startTableInFirestore(tableId, deviceId, input)
   }
 
   const playerNames = normalizePlayerNames(input.players)
@@ -969,7 +1239,8 @@ export async function startTableEntry(tableId: string, input: StartTableInput): 
   const currentPlayers = playerNames.map((name) => ({ deviceId: null, name }))
   const startedAt = Date.now()
 
-  const playRecord = registerPlay({
+  const playRecord = await registerPlay({
+    tableId,
     game: table.game,
     players: playerNames,
     startTime: startIso,
@@ -1027,10 +1298,8 @@ export async function completeTableEntry(tableId: string, input: CompleteTableIn
   await simulateDelay(150)
 
   if (useFirestore) {
-    return {
-      status: 'error',
-      message: 'El cierre de partidas aún no está disponible con sincronización remota.',
-    }
+    const deviceId = getClientDeviceId()
+    return completeTableInFirestore(tableId, deviceId, input)
   }
 
   const tables = readLocalTables()
@@ -1073,7 +1342,7 @@ export async function completeTableEntry(tableId: string, input: CompleteTableIn
   const completedAt = Date.now()
 
   if (table.activePlayId) {
-    completePlay(table.activePlayId, {
+    await completePlay(table.activePlayId, {
       result: resultSummary,
       chronicles,
       endedAt: new Date(completedAt).toISOString(),

@@ -1,4 +1,16 @@
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  orderBy,
+  query,
+  setDoc,
+  updateDoc,
+  where,
+} from 'firebase/firestore'
 import { useCallback, useEffect, useState } from 'react'
+import { db } from '../utils/firebase'
 
 export type PlayStatus = 'in-progress' | 'completed'
 
@@ -8,9 +20,10 @@ export type RoomOccupancySummary = Record<string, { activePlays: number; players
 
 export type PlayRecord = {
   id: string
+  tableId: string | null
   game: string
   players: string[]
-  startTime: string // ISO string
+  startTime: string
   room: string
   durationMinutes: number | null
   notes?: string | null
@@ -22,6 +35,7 @@ export type PlayRecord = {
 }
 
 export type RegisterPlayInput = {
+  tableId?: string | null
   game: string
   players: string[]
   startTime: string
@@ -36,18 +50,13 @@ export type CompletePlayInput = {
   endedAt?: string
 }
 
-export type DuplicateMatch = {
-  play: PlayRecord
-  sharedPlayers: number
-  sharedPlayersRatio: number
-  differenceMinutes: number
-}
-
 const STORAGE_KEY = 'clbsk_event_plays_v1'
 const now = new Date()
+
 const seedPlays: PlayRecord[] = [
   {
     id: 'seed-play-heat-1',
+    tableId: null,
     game: 'Heat: Pedal to the Metal',
     players: ['Ana', 'Luis', 'María', 'Jorge'],
     startTime: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 16, 0, 0, 0).toISOString(),
@@ -65,6 +74,7 @@ const seedPlays: PlayRecord[] = [
   },
   {
     id: 'seed-play-earth-1',
+    tableId: null,
     game: 'Earth',
     players: ['Claudia', 'Inés', 'Raúl'],
     startTime: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 17, 30, 0, 0).toISOString(),
@@ -79,6 +89,7 @@ const seedPlays: PlayRecord[] = [
   },
   {
     id: 'seed-play-scout-1',
+    tableId: null,
     game: 'Scout',
     players: ['Ana', 'María', 'Claudia'],
     startTime: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 18, 45, 0, 0).toISOString(),
@@ -94,6 +105,11 @@ const seedPlays: PlayRecord[] = [
     endedAt: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 19, 15, 0, 0).toISOString(),
   },
 ]
+
+const forceLocalPlays = import.meta.env.VITE_FORCE_LOCAL_PLAYS === 'true'
+const isTestEnvironment = import.meta.env.MODE === 'test'
+const useFirestore = !forceLocalPlays && !isTestEnvironment
+const playsCollectionRef = useFirestore ? collection(db, 'boardPlays') : null
 
 function resolveStorage(): Storage | null {
   if (typeof window === 'undefined') {
@@ -115,53 +131,42 @@ function parseStoredPlays(raw: string | null): PlayRecord[] {
 
   try {
     const parsed = JSON.parse(raw) as PlayRecord[]
-    return parsed.map(normalizePlay)
+    return parsed.map(normalizeLocalPlay)
   } catch (error) {
     console.warn('Datos de partidas corruptos, restableciendo', error)
     return seedPlays.slice()
   }
 }
 
-function normalizePlay(play: PlayRecord): PlayRecord {
+function normalizeLocalPlay(play: PlayRecord): PlayRecord {
   const players = Array.isArray(play.players)
     ? play.players.filter((player) => typeof player === 'string' && player.trim().length > 0)
     : []
 
-  const startTimestamp = Number.isFinite(Number(play.startTime))
-    ? Number(play.startTime)
-    : Date.parse(play.startTime)
-
-  const chronicles: PlayChronicles = {}
-  if (play.chronicles && typeof play.chronicles === 'object') {
-    Object.entries(play.chronicles).forEach(([name, text]) => {
-      if (typeof name === 'string' && typeof text === 'string') {
-        const trimmed = text.trim()
-        if (trimmed) {
-          chronicles[name.trim()] = trimmed
-        }
-      }
-    })
-  }
-
-  const endedTimestamp = play.endedAt ? Date.parse(play.endedAt) : NaN
-
   return {
     id: typeof play.id === 'string' ? play.id : `play-${Math.random().toString(36).slice(2)}`,
+    tableId: typeof play.tableId === 'string' ? play.tableId : null,
     game: typeof play.game === 'string' ? play.game : 'Juego sin nombre',
     players,
-    startTime: Number.isFinite(startTimestamp) ? new Date(startTimestamp).toISOString() : new Date().toISOString(),
+    startTime:
+      typeof play.startTime === 'string' && !Number.isNaN(Date.parse(play.startTime))
+        ? new Date(play.startTime).toISOString()
+        : new Date().toISOString(),
     room: typeof play.room === 'string' ? play.room : 'Sala por confirmar',
     durationMinutes: Number.isFinite(play.durationMinutes) ? Number(play.durationMinutes) : null,
     notes: typeof play.notes === 'string' ? play.notes : null,
     recordedAt: Number.isFinite(play.recordedAt) ? Number(play.recordedAt) : Date.now(),
     status: play.status === 'completed' ? 'completed' : 'in-progress',
     resultSummary: typeof play.resultSummary === 'string' ? play.resultSummary : null,
-    chronicles,
-    endedAt: Number.isNaN(endedTimestamp) ? null : new Date(endedTimestamp).toISOString(),
+    chronicles: sanitizeChronicles(play.chronicles ?? {}),
+    endedAt:
+      typeof play.endedAt === 'string' && !Number.isNaN(Date.parse(play.endedAt))
+        ? new Date(play.endedAt).toISOString()
+        : null,
   }
 }
 
-function readPlays(): PlayRecord[] {
+function readLocalPlays(): PlayRecord[] {
   const storage = resolveStorage()
   if (!storage) {
     return seedPlays.slice()
@@ -175,7 +180,7 @@ function readPlays(): PlayRecord[] {
   return plays
 }
 
-function writePlays(plays: PlayRecord[]) {
+function writeLocalPlays(plays: PlayRecord[]) {
   const storage = resolveStorage()
   if (!storage) {
     return
@@ -184,8 +189,27 @@ function writePlays(plays: PlayRecord[]) {
   storage.setItem(STORAGE_KEY, JSON.stringify(plays))
 }
 
-function generateId(): string {
-  return `play-${Math.random().toString(36).slice(2)}-${Date.now()}`
+function sanitizeChronicles(value: PlayChronicles | unknown): PlayChronicles {
+  const sanitized: PlayChronicles = {}
+  if (!value || typeof value !== 'object') {
+    return sanitized
+  }
+
+  Object.entries(value as PlayChronicles).forEach(([name, text]) => {
+    if (typeof name !== 'string' || typeof text !== 'string') {
+      return
+    }
+
+    const trimmedName = name.trim()
+    const trimmedText = text.trim()
+    if (!trimmedName || !trimmedText) {
+      return
+    }
+
+    sanitized[trimmedName] = trimmedText
+  })
+
+  return sanitized
 }
 
 function normalizePlayers(players: string[]): string[] {
@@ -203,17 +227,79 @@ function minutesFromIso(iso: string): number | null {
   return Math.floor(parsed / 60000)
 }
 
-export function registerPlay(input: RegisterPlayInput): PlayRecord {
-  const plays = readPlays()
+function mapFirestorePlay(id: string, data: Record<string, unknown>): PlayRecord {
+  const players = Array.isArray(data.players)
+    ? data.players.filter((player) => typeof player === 'string').map((player) => (player as string).trim()).filter(Boolean)
+    : []
+
+  return {
+    id,
+    tableId: typeof data.tableId === 'string' ? (data.tableId as string) : null,
+    game: typeof data.game === 'string' ? (data.game as string) : 'Juego sin nombre',
+    players,
+    startTime:
+      typeof data.startTime === 'string' && !Number.isNaN(Date.parse(data.startTime as string))
+        ? new Date(data.startTime as string).toISOString()
+        : new Date().toISOString(),
+    room: typeof data.room === 'string' ? (data.room as string) : 'Sala por confirmar',
+    durationMinutes: typeof data.durationMinutes === 'number' ? (data.durationMinutes as number) : null,
+    notes: typeof data.notes === 'string' ? (data.notes as string) : null,
+    recordedAt: typeof data.recordedAt === 'number' ? (data.recordedAt as number) : Date.now(),
+    status: data.status === 'completed' ? 'completed' : 'in-progress',
+    resultSummary: typeof data.resultSummary === 'string' ? (data.resultSummary as string) : null,
+    chronicles: sanitizeChronicles(data.chronicles),
+    endedAt:
+      typeof data.endedAt === 'string' && !Number.isNaN(Date.parse(data.endedAt as string))
+        ? new Date(data.endedAt as string).toISOString()
+        : null,
+  }
+}
+
+function generateId(): string {
+  return `play-${Math.random().toString(36).slice(2)}-${Date.now()}`
+}
+
+export async function registerPlay(input: RegisterPlayInput): Promise<PlayRecord> {
   const normalizedPlayers = normalizePlayers(input.players)
-  const now = new Date()
+  const nowDate = new Date()
   const start = Date.parse(input.startTime)
   const startIso = Number.isNaN(start)
-    ? new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).toISOString()
+    ? new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate(), 0, 0, 0, 0).toISOString()
     : new Date(start).toISOString()
+
+  if (useFirestore && playsCollectionRef) {
+    const playRef = doc(playsCollectionRef)
+  const payload = {
+    tableId: input.tableId ?? null,
+    game: input.game.trim() || 'Partida sin nombre',
+    gameLower: (input.game.trim() || 'Partida sin nombre').toLowerCase(),
+    players: normalizedPlayers,
+    room: input.room.trim() || 'Sala por confirmar',
+      startTime: startIso,
+      durationMinutes:
+        typeof input.durationMinutes === 'number' && Number.isFinite(input.durationMinutes)
+          ? Math.max(5, Math.floor(input.durationMinutes))
+          : null,
+      notes: input.notes?.trim() || null,
+      recordedAt: Date.now(),
+      status: 'in-progress' as PlayStatus,
+      resultSummary: null,
+      chronicles: {},
+      endedAt: null,
+    }
+
+  await setDoc(playRef, payload)
+    const mapped = mapFirestorePlay(playRef.id, payload)
+    const cached = [mapped, ...readLocalPlays()]
+    writeLocalPlays(cached)
+    return mapped
+  }
+
+  const plays = readLocalPlays()
 
   const newPlay: PlayRecord = {
     id: generateId(),
+    tableId: input.tableId ?? null,
     game: input.game.trim() || 'Partida sin nombre',
     players: normalizedPlayers,
     startTime: startIso,
@@ -231,69 +317,86 @@ export function registerPlay(input: RegisterPlayInput): PlayRecord {
   }
 
   const next = [newPlay, ...plays]
-  writePlays(next)
+  writeLocalPlays(next)
   return newPlay
 }
 
-export function completePlay(playId: string, input: CompletePlayInput): PlayRecord | null {
-  const plays = readPlays()
+export async function completePlay(playId: string, input: CompletePlayInput): Promise<PlayRecord | null> {
+  const sanitizedChronicles = sanitizeChronicles(input.chronicles)
+  const resultSummary = input.result.trim()
+  const endedAtIso = input.endedAt && !Number.isNaN(Date.parse(input.endedAt))
+    ? new Date(input.endedAt).toISOString()
+    : new Date().toISOString()
+
+  if (useFirestore && playsCollectionRef) {
+    try {
+      const playRef = doc(playsCollectionRef, playId)
+      await updateDoc(playRef, {
+        status: 'completed',
+        resultSummary: resultSummary || null,
+        chronicles: sanitizedChronicles,
+        endedAt: endedAtIso,
+      })
+
+      const snapshot = await getDoc(playRef)
+      if (!snapshot.exists()) {
+        return null
+      }
+
+      const mapped = mapFirestorePlay(snapshot.id, snapshot.data() as Record<string, unknown>)
+      const cached = readLocalPlays()
+      const index = cached.findIndex((play) => play.id === mapped.id)
+      if (index !== -1) {
+        cached[index] = mapped
+      }
+      writeLocalPlays(cached)
+      return mapped
+    } catch (error) {
+      console.error('No se pudo cerrar la partida en Firestore', error)
+      return null
+    }
+  }
+
+  const plays = readLocalPlays()
   const index = plays.findIndex((play) => play.id === playId)
   if (index === -1) {
     return null
   }
 
   const base = plays[index]
-
-  const sanitizedChronicles: PlayChronicles = {}
-  Object.entries(input.chronicles ?? {}).forEach(([name, text]) => {
-    if (typeof name !== 'string' || typeof text !== 'string') {
-      return
-    }
-    const trimmedName = name.trim()
-    const trimmedText = text.trim()
-    if (!trimmedName || !trimmedText) {
-      return
-    }
-    sanitizedChronicles[trimmedName] = trimmedText
-  })
-
-  const mergedChronicles: PlayChronicles = { ...base.chronicles, ...sanitizedChronicles }
-
-  const resultSummary = input.result.trim()
-  const parsedEnd = input.endedAt && !Number.isNaN(Date.parse(input.endedAt)) ? new Date(Date.parse(input.endedAt)) : new Date()
-
-  const updated = normalizePlay({
+  const updated = normalizeLocalPlay({
     ...base,
     status: 'completed',
     resultSummary: resultSummary || base.resultSummary,
-    chronicles: mergedChronicles,
-    endedAt: parsedEnd.toISOString(),
+    chronicles: { ...base.chronicles, ...sanitizedChronicles },
+    endedAt: endedAtIso,
   })
 
   const next = plays.slice()
   next[index] = updated
-  writePlays(next)
+  writeLocalPlays(next)
 
   return updated
 }
 
-export function listPlays(): PlayRecord[] {
-  return readPlays()
-    .slice()
-    .sort((first, second) => {
-      const firstStart = Date.parse(first.startTime)
-      const secondStart = Date.parse(second.startTime)
-      return secondStart - firstStart
-    })
+export async function listActivePlays(): Promise<PlayRecord[]> {
+  if (useFirestore && playsCollectionRef) {
+    try {
+      const snapshot = await getDocs(
+        query(playsCollectionRef, where('status', '==', 'in-progress'), orderBy('recordedAt', 'desc')),
+      )
+      return snapshot.docs.map((document) => mapFirestorePlay(document.id, document.data() as Record<string, unknown>))
+    } catch (error) {
+      console.error('No se pudieron obtener las partidas activas', error)
+      return []
+    }
+  }
+
+  return readLocalPlays().filter((play) => play.status === 'in-progress')
 }
 
-export function listActivePlays(): PlayRecord[] {
-  return listPlays().filter((play) => play.status === 'in-progress')
-}
-
-export function summarizeRoomOccupancy(): RoomOccupancySummary {
-  const active = listActivePlays()
-  return active.reduce<RoomOccupancySummary>((accumulator, play) => {
+export function summarizeRoomOccupancy(plays: PlayRecord[]): RoomOccupancySummary {
+  return plays.reduce<RoomOccupancySummary>((accumulator, play) => {
     const room = play.room || 'Sala sin definir'
     if (!accumulator[room]) {
       accumulator[room] = { activePlays: 0, players: 0 }
@@ -310,10 +413,17 @@ export type DuplicateQuery = {
   startTime: string
   thresholdMinutes?: number
 }
+export type DuplicateMatch = {
+  play: PlayRecord
+  sharedPlayers: number
+  sharedPlayersRatio: number
+  differenceMinutes: number
+}
 
 export function findPotentialDuplicates(query: DuplicateQuery): DuplicateMatch[] {
-  const plays = readPlays()
+  const plays = readLocalPlays()
   const normalizedPlayers = normalizePlayers(query.players)
+
   if (!query.game.trim() || normalizedPlayers.length === 0) {
     return []
   }
