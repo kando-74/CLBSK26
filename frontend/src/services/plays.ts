@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 
+export type PlayStatus = 'in-progress' | 'completed'
+
+export type PlayChronicles = Record<string, string>
+
+export type RoomOccupancySummary = Record<string, { activePlays: number; players: number }>
+
 export type PlayRecord = {
   id: string
   game: string
@@ -9,6 +15,10 @@ export type PlayRecord = {
   durationMinutes: number | null
   notes?: string | null
   recordedAt: number
+  status: PlayStatus
+  resultSummary: string | null
+  chronicles: PlayChronicles
+  endedAt: string | null
 }
 
 export type RegisterPlayInput = {
@@ -18,6 +28,12 @@ export type RegisterPlayInput = {
   room: string
   durationMinutes?: number | null
   notes?: string | null
+}
+
+export type CompletePlayInput = {
+  result: string
+  chronicles: PlayChronicles
+  endedAt?: string
 }
 
 export type DuplicateMatch = {
@@ -39,6 +55,13 @@ const seedPlays: PlayRecord[] = [
     durationMinutes: 70,
     notes: 'Carrera con módulo Weather',
     recordedAt: Date.now() - 1000 * 60 * 35,
+    status: 'completed',
+    resultSummary: 'Ana gana por 12 puntos',
+    chronicles: {
+      Ana: 'Carrera muy reñida hasta la última curva.',
+      Luis: 'Volveremos a jugar con la expansión Meteo.',
+    },
+    endedAt: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 17, 10, 0, 0).toISOString(),
   },
   {
     id: 'seed-play-earth-1',
@@ -49,6 +72,10 @@ const seedPlays: PlayRecord[] = [
     durationMinutes: 90,
     notes: null,
     recordedAt: Date.now() - 1000 * 60 * 90,
+    status: 'in-progress',
+    resultSummary: null,
+    chronicles: {},
+    endedAt: null,
   },
   {
     id: 'seed-play-scout-1',
@@ -59,6 +86,12 @@ const seedPlays: PlayRecord[] = [
     durationMinutes: 25,
     notes: 'Dos rondas seguidas',
     recordedAt: Date.now() - 1000 * 60 * 15,
+    status: 'completed',
+    resultSummary: 'Victoria compartida de Ana y María',
+    chronicles: {
+      Ana: 'Scout siempre es un acierto para cerrar la jornada.',
+    },
+    endedAt: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 19, 15, 0, 0).toISOString(),
   },
 ]
 
@@ -98,6 +131,20 @@ function normalizePlay(play: PlayRecord): PlayRecord {
     ? Number(play.startTime)
     : Date.parse(play.startTime)
 
+  const chronicles: PlayChronicles = {}
+  if (play.chronicles && typeof play.chronicles === 'object') {
+    Object.entries(play.chronicles).forEach(([name, text]) => {
+      if (typeof name === 'string' && typeof text === 'string') {
+        const trimmed = text.trim()
+        if (trimmed) {
+          chronicles[name.trim()] = trimmed
+        }
+      }
+    })
+  }
+
+  const endedTimestamp = play.endedAt ? Date.parse(play.endedAt) : NaN
+
   return {
     id: typeof play.id === 'string' ? play.id : `play-${Math.random().toString(36).slice(2)}`,
     game: typeof play.game === 'string' ? play.game : 'Juego sin nombre',
@@ -107,6 +154,10 @@ function normalizePlay(play: PlayRecord): PlayRecord {
     durationMinutes: Number.isFinite(play.durationMinutes) ? Number(play.durationMinutes) : null,
     notes: typeof play.notes === 'string' ? play.notes : null,
     recordedAt: Number.isFinite(play.recordedAt) ? Number(play.recordedAt) : Date.now(),
+    status: play.status === 'completed' ? 'completed' : 'in-progress',
+    resultSummary: typeof play.resultSummary === 'string' ? play.resultSummary : null,
+    chronicles,
+    endedAt: Number.isNaN(endedTimestamp) ? null : new Date(endedTimestamp).toISOString(),
   }
 }
 
@@ -173,11 +224,84 @@ export function registerPlay(input: RegisterPlayInput): PlayRecord {
         : null,
     notes: input.notes?.trim() || null,
     recordedAt: Date.now(),
+    status: 'in-progress',
+    resultSummary: null,
+    chronicles: {},
+    endedAt: null,
   }
 
   const next = [newPlay, ...plays]
   writePlays(next)
   return newPlay
+}
+
+export function completePlay(playId: string, input: CompletePlayInput): PlayRecord | null {
+  const plays = readPlays()
+  const index = plays.findIndex((play) => play.id === playId)
+  if (index === -1) {
+    return null
+  }
+
+  const base = plays[index]
+
+  const sanitizedChronicles: PlayChronicles = {}
+  Object.entries(input.chronicles ?? {}).forEach(([name, text]) => {
+    if (typeof name !== 'string' || typeof text !== 'string') {
+      return
+    }
+    const trimmedName = name.trim()
+    const trimmedText = text.trim()
+    if (!trimmedName || !trimmedText) {
+      return
+    }
+    sanitizedChronicles[trimmedName] = trimmedText
+  })
+
+  const mergedChronicles: PlayChronicles = { ...base.chronicles, ...sanitizedChronicles }
+
+  const resultSummary = input.result.trim()
+  const parsedEnd = input.endedAt && !Number.isNaN(Date.parse(input.endedAt)) ? new Date(Date.parse(input.endedAt)) : new Date()
+
+  const updated = normalizePlay({
+    ...base,
+    status: 'completed',
+    resultSummary: resultSummary || base.resultSummary,
+    chronicles: mergedChronicles,
+    endedAt: parsedEnd.toISOString(),
+  })
+
+  const next = plays.slice()
+  next[index] = updated
+  writePlays(next)
+
+  return updated
+}
+
+export function listPlays(): PlayRecord[] {
+  return readPlays()
+    .slice()
+    .sort((first, second) => {
+      const firstStart = Date.parse(first.startTime)
+      const secondStart = Date.parse(second.startTime)
+      return secondStart - firstStart
+    })
+}
+
+export function listActivePlays(): PlayRecord[] {
+  return listPlays().filter((play) => play.status === 'in-progress')
+}
+
+export function summarizeRoomOccupancy(): RoomOccupancySummary {
+  const active = listActivePlays()
+  return active.reduce<RoomOccupancySummary>((accumulator, play) => {
+    const room = play.room || 'Sala sin definir'
+    if (!accumulator[room]) {
+      accumulator[room] = { activePlays: 0, players: 0 }
+    }
+    accumulator[room].activePlays += 1
+    accumulator[room].players += play.players.length
+    return accumulator
+  }, {})
 }
 
 export type DuplicateQuery = {

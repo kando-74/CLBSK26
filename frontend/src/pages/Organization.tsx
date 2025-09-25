@@ -26,6 +26,7 @@ import {
   subscribeActivityLogs,
   type ActivityLogRecord,
 } from '../services/activity'
+import { listActivePlays, summarizeRoomOccupancy, type PlayRecord, type RoomOccupancySummary } from '../services/plays'
 
 type PanelTab = 'attendees' | 'whitelist' | 'duplicates' | 'exports'
 
@@ -325,6 +326,8 @@ export function Organization() {
   })
   const [processingExport, setProcessingExport] = useState<string | null>(null)
   const [selectedAttendee, setSelectedAttendee] = useState<Attendee | null>(null)
+  const [activePlays, setActivePlays] = useState<PlayRecord[]>(() => listActivePlays())
+  const [roomSummary, setRoomSummary] = useState<RoomOccupancySummary>(() => summarizeRoomOccupancy())
   const day = getCurrentCongressDay()
 
   const filteredAttendees = useMemo(() => {
@@ -354,6 +357,17 @@ export function Organization() {
     [duplicateList],
   )
 
+  const totalActivePlayers = useMemo(
+    () => activePlays.reduce((accumulator, play) => accumulator + play.players.length, 0),
+    [activePlays],
+  )
+
+  const roomSummaryEntries = useMemo(
+    () =>
+      Object.entries(roomSummary).sort(([, first], [, second]) => second.players - first.players),
+    [roomSummary],
+  )
+
   useEffect(() => {
     if (!panelMessage) {
       return
@@ -362,6 +376,11 @@ export function Organization() {
     const timeout = setTimeout(() => setPanelMessage(null), 4000)
     return () => clearTimeout(timeout)
   }, [panelMessage])
+
+  const updateLivePlays = useCallback(() => {
+    setActivePlays(listActivePlays())
+    setRoomSummary(summarizeRoomOccupancy())
+  }, [])
 
   useEffect(() => {
     if (!selectedAttendee) {
@@ -393,6 +412,28 @@ export function Organization() {
       unsubscribe()
     }
   }, [])
+
+  useEffect(() => {
+    updateLivePlays()
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const interval = window.setInterval(updateLivePlays, 10000)
+
+    const handler = (event: StorageEvent) => {
+      if (event.key === 'clbsk_event_plays_v1') {
+        updateLivePlays()
+      }
+    }
+
+    window.addEventListener('storage', handler)
+
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('storage', handler)
+    }
+  }, [updateLivePlays])
 
   const addAuditEntry = useCallback((message: string) => {
     const deviceId = getClientDeviceId()
@@ -667,10 +708,35 @@ export function Organization() {
           <p className="text-xs text-text-secondary">Requieren intervención</p>
         </div>
         <div className="card space-y-1 p-4">
-          <p className="text-xs uppercase tracking-wide text-text-secondary">Partidas registradas</p>
-          <p className="text-2xl font-semibold text-text-primary">26</p>
-          <p className="text-xs text-text-secondary">Actualizado hace 8 minutos</p>
+          <p className="text-xs uppercase tracking-wide text-text-secondary">Partidas en juego</p>
+          <p className="text-2xl font-semibold text-text-primary">{activePlays.length}</p>
+          <p className="text-xs text-text-secondary">{totalActivePlayers} personas jugando ahora mismo</p>
         </div>
+      </section>
+
+      <section className="card space-y-3 p-6">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold text-text-primary">Ocupación por salas</h3>
+          <p className="text-xs text-text-secondary">
+            Datos en vivo · actualizamos cada pocos segundos
+          </p>
+        </div>
+        {roomSummaryEntries.length === 0 ? (
+          <p className="text-sm text-text-secondary">No hay partidas en curso en este momento.</p>
+        ) : (
+          <div className="grid gap-2 md:grid-cols-3">
+            {roomSummaryEntries.map(([roomName, stats]) => (
+              <div
+                key={`room-${roomName}`}
+                className="rounded-2xl border border-primary/20 bg-background px-4 py-3 text-sm text-text-secondary"
+              >
+                <p className="text-xs uppercase tracking-wide text-text-secondary">{roomName}</p>
+                <p className="text-base font-semibold text-text-primary">{stats.players} personas jugando</p>
+                <p className="text-xs text-text-secondary">{stats.activePlays} partidas activas</p>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="card space-y-4 p-6">

@@ -11,11 +11,16 @@ import {
 } from 'firebase/firestore'
 import { db } from '../utils/firebase'
 import { getClientDeviceId, logActivity } from './activity'
+import { registerPlay, completePlay } from './plays'
 
 type TableParticipant = {
   deviceId: string | null
   name: string
 }
+
+export type TableStatus = 'open' | 'in-progress' | 'completed'
+
+type TableChronicles = Record<string, string>
 
 type StoredTable = {
   id: string
@@ -32,6 +37,13 @@ type StoredTable = {
   createdAt: number
   coverUrl?: string | null
   participants?: TableParticipant[]
+  status?: TableStatus
+  activePlayId?: string | null
+  currentPlayers?: TableParticipant[]
+  startedAt?: number | null
+  completedAt?: number | null
+  resultSummary?: string | null
+  chronicles?: TableChronicles
 }
 
 type FirestoreTable = {
@@ -49,6 +61,13 @@ type FirestoreTable = {
   updatedAt?: number
   coverUrl?: string | null
   participants?: TableParticipant[]
+  status?: TableStatus
+  activePlayId?: string | null
+  currentPlayers?: TableParticipant[]
+  startedAt?: number | null
+  completedAt?: number | null
+  resultSummary?: string | null
+  chronicles?: TableChronicles
 }
 
 type FirestoreActionResult = {
@@ -72,6 +91,13 @@ export type TableRecord = {
   createdAt: number
   coverUrl?: string | null
   participants: TableParticipant[]
+  status: TableStatus
+  activePlayId: string | null
+  currentPlayers: TableParticipant[]
+  startedAt: number | null
+  completedAt: number | null
+  resultSummary: string | null
+  chronicles: TableChronicles
 }
 
 export type CreateTableInput = {
@@ -82,6 +108,17 @@ export type CreateTableInput = {
   room: string
   description: string
   coverUrl?: string | null
+}
+
+export type StartTableInput = {
+  players: string[]
+  room: string
+  startTime?: string
+}
+
+export type CompleteTableInput = {
+  result: string
+  chronicles: TableChronicles
 }
 
 export type TableActionStatus = 'success' | 'already-joined' | 'full' | 'error'
@@ -115,6 +152,7 @@ const seedTables: StoredTable[] = [
     createdAt: new Date('2024-10-25T18:00:00Z').getTime(),
     coverUrl: null,
     participants: [{ deviceId: null, name: 'Lucía' }],
+    status: 'open',
   },
   {
     id: 'table-scout',
@@ -128,6 +166,7 @@ const seedTables: StoredTable[] = [
     createdAt: new Date('2024-10-25T17:30:00Z').getTime(),
     coverUrl: null,
     participants: [{ deviceId: null, name: 'Javi' }],
+    status: 'open',
   },
   {
     id: 'table-earth',
@@ -141,6 +180,7 @@ const seedTables: StoredTable[] = [
     createdAt: new Date('2024-10-25T19:30:00Z').getTime(),
     coverUrl: null,
     participants: [{ deviceId: null, name: 'Marta' }],
+    status: 'open',
   },
 ]
 
@@ -212,6 +252,17 @@ function normalizeLocalTable(entry: StoredTable | (StoredTable & { joined?: bool
         name: participant.name ?? entry.host,
       }))
     : [{ deviceId: null, name: entry.host }]
+  const currentPlayers = Array.isArray((entry as StoredTable).currentPlayers)
+    ? (entry as StoredTable).currentPlayers!.map((participant) => ({
+        deviceId:
+          typeof participant.deviceId === 'string' || participant.deviceId === null
+            ? participant.deviceId
+            : null,
+        name: participant.name ?? entry.host,
+      }))
+    : []
+  const chronicles = (entry as StoredTable).chronicles ?? {}
+  const status = (entry as StoredTable).status ?? 'open'
   return {
     id: entry.id,
     game: entry.game,
@@ -227,6 +278,52 @@ function normalizeLocalTable(entry: StoredTable | (StoredTable & { joined?: bool
     createdAt: entry.createdAt,
     coverUrl: 'coverUrl' in entry ? entry.coverUrl ?? null : null,
     participants,
+    status,
+    activePlayId:
+      (entry as StoredTable).activePlayId === undefined
+        ? null
+        : (entry as StoredTable).activePlayId ?? null,
+    currentPlayers,
+    startedAt: typeof (entry as StoredTable).startedAt === 'number' ? (entry as StoredTable).startedAt ?? null : null,
+    completedAt:
+      typeof (entry as StoredTable).completedAt === 'number' ? (entry as StoredTable).completedAt ?? null : null,
+    resultSummary:
+      typeof (entry as StoredTable).resultSummary === 'string'
+        ? (entry as StoredTable).resultSummary ?? null
+        : null,
+    chronicles,
+  }
+}
+
+function normalizePlayerNames(names: string[]): string[] {
+  const seen = new Set<string>()
+  const normalized: string[] = []
+
+  names.forEach((name) => {
+    const trimmed = name.trim()
+    if (!trimmed) {
+      return
+    }
+    const key = trimmed.toLowerCase()
+    if (seen.has(key)) {
+      return
+    }
+    seen.add(key)
+    normalized.push(trimmed)
+  })
+
+  return normalized
+}
+
+function formatTimeLabelFromDate(date: Date): string {
+  try {
+    return date.toLocaleTimeString('es-ES', {
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch (error) {
+    console.warn('No se pudo formatear la hora de inicio de la partida', error)
+    return date.toISOString()
   }
 }
 
@@ -266,6 +363,8 @@ function cloneLocalTable(table: StoredTable): StoredTable {
     ...table,
     seats: { ...table.seats },
     participants: table.participants ? table.participants.map((participant) => ({ ...participant })) : [],
+    currentPlayers: table.currentPlayers ? table.currentPlayers.map((participant) => ({ ...participant })) : [],
+    chronicles: table.chronicles ? { ...table.chronicles } : {},
   }
 }
 
@@ -282,6 +381,13 @@ function localTableToRecord(table: StoredTable): TableRecord {
     createdAt: table.createdAt,
     coverUrl: table.coverUrl ?? null,
     participants: table.participants ? table.participants.map((participant) => ({ ...participant })) : [],
+    status: table.status ?? 'open',
+    activePlayId: table.activePlayId ?? null,
+    currentPlayers: table.currentPlayers ? table.currentPlayers.map((participant) => ({ ...participant })) : [],
+    startedAt: typeof table.startedAt === 'number' ? table.startedAt : null,
+    completedAt: typeof table.completedAt === 'number' ? table.completedAt : null,
+    resultSummary: typeof table.resultSummary === 'string' ? table.resultSummary : null,
+    chronicles: table.chronicles ? { ...table.chronicles } : {},
   }
 }
 
@@ -388,6 +494,13 @@ async function createTableInFirestore(input: CreateTableInput, deviceId: string)
         name: input.host,
       },
     ],
+    status: 'open',
+    activePlayId: null,
+    currentPlayers: [],
+    startedAt: null,
+    completedAt: null,
+    resultSummary: null,
+    chronicles: {},
   }
 
   try {
@@ -579,6 +692,19 @@ function mapFirestoreTable(id: string, data: FirestoreTable, joined: boolean): T
           name: participant.name ?? data.host,
         }))
     : [{ deviceId: null, name: data.host }]
+  const currentPlayers = Array.isArray(data.currentPlayers)
+    ? data.currentPlayers
+        .filter((participant) => participant && typeof participant.name === 'string')
+        .map((participant) => ({
+          deviceId:
+            typeof participant.deviceId === 'string' || participant.deviceId === null
+              ? participant.deviceId
+              : null,
+          name: participant.name ?? data.host,
+        }))
+    : []
+  const chronicles = data.chronicles ?? {}
+  const status: TableStatus = data.status ?? 'open'
 
   return {
     id,
@@ -595,6 +721,13 @@ function mapFirestoreTable(id: string, data: FirestoreTable, joined: boolean): T
     createdAt,
     coverUrl: data.coverUrl ?? null,
     participants,
+    status,
+    activePlayId: data.activePlayId ?? null,
+    currentPlayers,
+    startedAt: typeof data.startedAt === 'number' ? data.startedAt : null,
+    completedAt: typeof data.completedAt === 'number' ? data.completedAt : null,
+    resultSummary: typeof data.resultSummary === 'string' ? data.resultSummary : null,
+    chronicles,
   }
 }
 
@@ -674,6 +807,13 @@ export async function createTableEntry(input: CreateTableInput): Promise<TableAc
           name: input.host,
         },
       ],
+      status: 'open',
+      activePlayId: null,
+      currentPlayers: [],
+      startedAt: null,
+      completedAt: null,
+      resultSummary: null,
+      chronicles: {},
     })
 
     const next = [storedTable, ...tables]
@@ -713,6 +853,15 @@ export async function joinTableEntry(tableId: string, participantName: string): 
     }
 
     const table = tables[index]
+
+    const status = table.status ?? 'open'
+    if (status !== 'open') {
+      return {
+        status: 'error',
+        message: `${table.game}: la partida ya está en marcha o finalizada.`,
+        table: localTableToRecord({ ...table }),
+      }
+    }
 
     if (table.joinedByLocal) {
       markTableAsJoinedLocally(table.id)
@@ -766,6 +915,207 @@ export async function joinTableEntry(tableId: string, participantName: string): 
   }
 }
 
+export async function startTableEntry(tableId: string, input: StartTableInput): Promise<TableActionResult> {
+  await simulateDelay(150)
+
+  if (useFirestore) {
+    return {
+      status: 'error',
+      message: 'La sincronización remota de partidas se habilitará en una próxima versión.',
+    }
+  }
+
+  const playerNames = normalizePlayerNames(input.players)
+  if (playerNames.length === 0) {
+    return {
+      status: 'error',
+      message: 'Selecciona al menos una persona que vaya a jugar.',
+    }
+  }
+
+  const tables = readLocalTables()
+  const index = tables.findIndex((table) => table.id === tableId)
+  if (index === -1) {
+    return {
+      status: 'error',
+      message: 'La mesa ya no está disponible.',
+    }
+  }
+
+  const table = tables[index]
+  if ((table.status ?? 'open') !== 'open') {
+    return {
+      status: 'error',
+      message: `${table.game}: la partida ya está en marcha o finalizada.`,
+      table: localTableToRecord({ ...table }),
+    }
+  }
+
+  const resolvedRoom = input.room.trim() || table.room
+  const parsedStart = input.startTime && !Number.isNaN(Date.parse(input.startTime))
+    ? new Date(Date.parse(input.startTime))
+    : new Date()
+  const startIso = parsedStart.toISOString()
+
+  const participants = table.participants ?? []
+  const knownNames = new Set(participants.map((participant) => participant.name.toLowerCase()))
+  playerNames.forEach((name) => {
+    if (!knownNames.has(name.toLowerCase())) {
+      participants.push({ deviceId: null, name })
+      knownNames.add(name.toLowerCase())
+    }
+  })
+
+  const currentPlayers = playerNames.map((name) => ({ deviceId: null, name }))
+  const startedAt = Date.now()
+
+  const playRecord = registerPlay({
+    game: table.game,
+    players: playerNames,
+    startTime: startIso,
+    room: resolvedRoom,
+    durationMinutes: table.seats.total ? Math.min(table.seats.total * 20, 240) : undefined,
+    notes: table.description,
+  })
+
+  const updatedRaw: StoredTable = {
+    ...table,
+    participants,
+    currentPlayers,
+    status: 'in-progress',
+    activePlayId: playRecord.id,
+    startedAt,
+    completedAt: null,
+    resultSummary: null,
+    chronicles: {},
+    room: resolvedRoom,
+    start: formatTimeLabelFromDate(parsedStart),
+    seats: {
+      total: table.seats.total,
+      taken: Math.min(table.seats.total, Math.max(playerNames.length, table.seats.taken)),
+    },
+    joinedByLocal: true,
+  }
+
+  const normalized = normalizeLocalTable(updatedRaw)
+  tables[index] = normalized
+  writeLocalTables(tables)
+
+  const deviceId = getClientDeviceId()
+  void logActivity(
+    {
+      type: 'table:start',
+      entityId: tableId,
+      entityName: table.game,
+      message: 'La partida ha comenzado',
+      metadata: {
+        room: resolvedRoom,
+        players: playerNames.length,
+      },
+    },
+    { deviceId },
+  )
+
+  return {
+    status: 'success',
+    message: 'Partida iniciada. ¡Buen juego!',
+    table: localTableToRecord(normalized),
+  }
+}
+
+export async function completeTableEntry(tableId: string, input: CompleteTableInput): Promise<TableActionResult> {
+  await simulateDelay(150)
+
+  if (useFirestore) {
+    return {
+      status: 'error',
+      message: 'El cierre de partidas aún no está disponible con sincronización remota.',
+    }
+  }
+
+  const tables = readLocalTables()
+  const index = tables.findIndex((table) => table.id === tableId)
+  if (index === -1) {
+    return {
+      status: 'error',
+      message: 'La mesa ya no está disponible.',
+    }
+  }
+
+  const table = tables[index]
+  if ((table.status ?? 'open') !== 'in-progress') {
+    return {
+      status: 'error',
+      message: `${table.game}: la mesa no está marcada como en juego.`,
+      table: localTableToRecord({ ...table }),
+    }
+  }
+
+  const resultSummary = input.result.trim()
+  const chronicles: TableChronicles = {}
+  const referencePlayers = (table.currentPlayers && table.currentPlayers.length > 0
+    ? table.currentPlayers
+    : table.participants ?? []).map((participant) => participant.name.toLowerCase())
+
+  Object.entries(input.chronicles ?? {}).forEach(([name, text]) => {
+    const trimmedName = name.trim()
+    const trimmedText = text.trim()
+    if (!trimmedName || !trimmedText) {
+      return
+    }
+
+    // permit cualquier jugador, pero preferimos los que ya están en la mesa
+    if (referencePlayers.length === 0 || referencePlayers.includes(trimmedName.toLowerCase())) {
+      chronicles[trimmedName] = trimmedText
+    }
+  })
+
+  const completedAt = Date.now()
+
+  if (table.activePlayId) {
+    completePlay(table.activePlayId, {
+      result: resultSummary,
+      chronicles,
+      endedAt: new Date(completedAt).toISOString(),
+    })
+  }
+
+  const updatedRaw: StoredTable = {
+    ...table,
+    status: 'completed',
+    activePlayId: null,
+    currentPlayers: [],
+    completedAt,
+    resultSummary: resultSummary || null,
+    chronicles,
+  }
+
+  const normalized = normalizeLocalTable(updatedRaw)
+  tables[index] = normalized
+  writeLocalTables(tables)
+
+  const deviceId = getClientDeviceId()
+  void logActivity(
+    {
+      type: 'table:finish',
+      entityId: tableId,
+      entityName: table.game,
+      message: 'La partida ha finalizado',
+      metadata: {
+        result: resultSummary || 'Partida cerrada',
+        chronicles: Object.keys(chronicles).length,
+      },
+    },
+    { deviceId },
+  )
+
+  return {
+    status: 'success',
+    message: 'Partida finalizada y registrada correctamente.',
+    table: localTableToRecord(normalized),
+  }
+}
+
 export function resetTablesForTests() {
   if (useFirestore) {
     console.warn('resetTablesForTests solo está disponible en modo local.')
@@ -786,6 +1136,8 @@ type UseTablesService = TablesState & {
   refresh: () => Promise<void>
   createTable: (input: CreateTableInput) => Promise<TableActionResult>
   joinTable: (tableId: string, participantName: string) => Promise<TableActionResult>
+  startTable: (tableId: string, input: StartTableInput) => Promise<TableActionResult>
+  completeTable: (tableId: string, input: CompleteTableInput) => Promise<TableActionResult>
 }
 
 export function useTablesService(): UseTablesService {
@@ -884,13 +1236,51 @@ export function useTablesService(): UseTablesService {
     return result
   }, [])
 
+  const handleStart = useCallback(async (tableId: string, startInput: StartTableInput) => {
+    const result = await startTableEntry(tableId, startInput)
+    if (result.table) {
+      setState((current) => ({
+        loading: false,
+        error: null,
+        tables: current.tables
+          .map((table) => (table.id === result.table!.id ? result.table! : table))
+          .sort((first, second) => second.createdAt - first.createdAt),
+      }))
+    }
+    if (result.status === 'error') {
+      setState((current) => ({ ...current, error: result.message ?? 'No se pudo iniciar la partida.' }))
+    }
+
+    return result
+  }, [])
+
+  const handleComplete = useCallback(async (tableId: string, completeInput: CompleteTableInput) => {
+    const result = await completeTableEntry(tableId, completeInput)
+    if (result.table) {
+      setState((current) => ({
+        loading: false,
+        error: null,
+        tables: current.tables
+          .map((table) => (table.id === result.table!.id ? result.table! : table))
+          .sort((first, second) => second.createdAt - first.createdAt),
+      }))
+    }
+    if (result.status === 'error') {
+      setState((current) => ({ ...current, error: result.message ?? 'No se pudo finalizar la partida.' }))
+    }
+
+    return result
+  }, [])
+
   return useMemo(
     () => ({
       ...state,
       refresh: loadTables,
       createTable: handleCreate,
       joinTable: handleJoin,
+      startTable: handleStart,
+      completeTable: handleComplete,
     }),
-    [handleCreate, handleJoin, loadTables, state],
+    [handleComplete, handleCreate, handleJoin, handleStart, loadTables, state],
   )
 }
