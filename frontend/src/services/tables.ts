@@ -1,4 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  collection,
+  doc,
+  getDocs,
+  orderBy,
+  query,
+  runTransaction,
+  setDoc,
+} from 'firebase/firestore'
+import { db } from '../utils/firebase'
 
 type StoredTable = {
   id: string
@@ -13,6 +23,27 @@ type StoredTable = {
   description: string
   joinedByLocal: boolean
   createdAt: number
+}
+
+type FirestoreTable = {
+  game: string
+  host: string
+  seats: {
+    total: number
+    taken: number
+  }
+  start: string
+  room: string
+  description: string
+  joinedBy?: string[]
+  createdAt: number
+  updatedAt?: number
+}
+
+type FirestoreActionResult = {
+  status: TableActionStatus
+  message: string
+  data?: FirestoreTable
 }
 
 export type TableRecord = {
@@ -48,6 +79,15 @@ export type TableActionResult = {
 }
 
 const STORAGE_KEY = 'clbsk_board_tables_v1'
+const JOINED_STORAGE_KEY = 'clbsk_board_joined_ids_v1'
+const DEVICE_ID_STORAGE_KEY = 'clbsk_board_device_id_v1'
+const FIRESTORE_COLLECTION = 'boardTables'
+const MAX_TOTAL_SEATS = 8
+
+const forceLocalTables = import.meta.env.VITE_FORCE_LOCAL_TABLES === 'true'
+const isTestEnvironment = import.meta.env.MODE === 'test'
+const useFirestore = !forceLocalTables && !isTestEnvironment
+const tablesCollectionRef = useFirestore ? collection(db, FIRESTORE_COLLECTION) : null
 
 const seedTables: StoredTable[] = [
   {
@@ -98,7 +138,70 @@ function getStorage(): Storage | null {
   }
 }
 
-function normalizeTable(entry: StoredTable | (StoredTable & { joined?: boolean })): StoredTable {
+function getDeviceId(): string {
+  const storage = getStorage()
+  if (!storage) {
+    return 'device-offline'
+  }
+
+  const existing = storage.getItem(DEVICE_ID_STORAGE_KEY)
+  if (existing) {
+    return existing
+  }
+
+  const randomValue =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `device-${Math.random().toString(36).slice(2)}-${Date.now()}`
+
+  storage.setItem(DEVICE_ID_STORAGE_KEY, randomValue)
+  return randomValue
+}
+
+function readJoinedTableIds(): Set<string> {
+  const storage = getStorage()
+  if (!storage) {
+    return new Set<string>()
+  }
+
+  try {
+    const raw = storage.getItem(JOINED_STORAGE_KEY)
+    if (!raw) {
+      return new Set<string>()
+    }
+
+    const parsed = JSON.parse(raw) as string[]
+    return new Set(parsed.filter((value) => typeof value === 'string'))
+  } catch (error) {
+    console.warn('No se pudieron leer las mesas apuntadas localmente', error)
+    storage.removeItem(JOINED_STORAGE_KEY)
+    return new Set<string>()
+  }
+}
+
+function persistJoinedTableIds(ids: Set<string>) {
+  const storage = getStorage()
+  if (!storage) {
+    return
+  }
+
+  storage.setItem(JOINED_STORAGE_KEY, JSON.stringify(Array.from(ids)))
+}
+
+function markTableAsJoinedLocally(tableId: string) {
+  const joined = readJoinedTableIds()
+  joined.add(tableId)
+  persistJoinedTableIds(joined)
+}
+
+function unmarkTableAsJoinedLocally(tableId: string) {
+  const joined = readJoinedTableIds()
+  if (joined.delete(tableId)) {
+    persistJoinedTableIds(joined)
+  }
+}
+
+function normalizeLocalTable(entry: StoredTable | (StoredTable & { joined?: boolean })): StoredTable {
   const totalSeats = clampSeats(entry.seats?.total ?? 4)
   const takenSeats = clampSeats(entry.seats?.taken ?? 0, totalSeats)
   return {
@@ -117,7 +220,7 @@ function normalizeTable(entry: StoredTable | (StoredTable & { joined?: boolean }
   }
 }
 
-function readTables(): StoredTable[] {
+function readLocalTables(): StoredTable[] {
   const storage = getStorage()
   if (!storage) {
     return seedTables.map(cloneTable)
@@ -125,21 +228,21 @@ function readTables(): StoredTable[] {
 
   const raw = storage.getItem(STORAGE_KEY)
   if (!raw) {
-    writeTables(seedTables.map(cloneTable))
-    return seedTables.map(cloneTable)
+    writeLocalTables(seedTables.map(cloneLocalTable))
+    return seedTables.map(cloneLocalTable)
   }
 
   try {
     const parsed = JSON.parse(raw) as StoredTable[]
-    return parsed.map(normalizeTable)
+    return parsed.map(normalizeLocalTable)
   } catch (error) {
     console.warn('Datos corruptos del tablón, reseteando', error)
-    writeTables(seedTables.map(cloneTable))
-    return seedTables.map(cloneTable)
+    writeLocalTables(seedTables.map(cloneLocalTable))
+    return seedTables.map(cloneLocalTable)
   }
 }
 
-function writeTables(tables: StoredTable[]) {
+function writeLocalTables(tables: StoredTable[]) {
   const storage = getStorage()
   if (!storage) {
     return
@@ -148,14 +251,14 @@ function writeTables(tables: StoredTable[]) {
   storage.setItem(STORAGE_KEY, JSON.stringify(tables))
 }
 
-function cloneTable(table: StoredTable): StoredTable {
+function cloneLocalTable(table: StoredTable): StoredTable {
   return {
     ...table,
     seats: { ...table.seats },
   }
 }
 
-function toRecord(table: StoredTable): TableRecord {
+function localTableToRecord(table: StoredTable): TableRecord {
   return {
     id: table.id,
     game: table.game,
@@ -166,6 +269,203 @@ function toRecord(table: StoredTable): TableRecord {
     description: table.description,
     joined: table.joinedByLocal,
     createdAt: table.createdAt,
+  }
+}
+
+async function fetchTablesFromFirestore(deviceId: string): Promise<TableRecord[]> {
+  if (!tablesCollectionRef) {
+    return []
+  }
+
+  const snapshot = await getDocs(query(tablesCollectionRef, orderBy('createdAt', 'desc')))
+  const joinedSet = readJoinedTableIds()
+
+  const records = snapshot.docs.map((document) => {
+    const data = document.data() as FirestoreTable
+    const joinedBy = Array.isArray(data.joinedBy) ? data.joinedBy : []
+    const joined = joinedBy.includes(deviceId)
+
+    if (joined) {
+      joinedSet.add(document.id)
+    } else {
+      joinedSet.delete(document.id)
+    }
+
+    return mapFirestoreTable(document.id, data, joined)
+  })
+
+  persistJoinedTableIds(joinedSet)
+  return records
+}
+
+async function createTableInFirestore(input: CreateTableInput, deviceId: string): Promise<TableActionResult> {
+  if (!tablesCollectionRef) {
+    return {
+      status: 'error',
+      message: 'No se pudo publicar la mesa. Inténtalo de nuevo en unos segundos.',
+    }
+  }
+
+  const totalSeats = clampSeats(input.seats, MAX_TOTAL_SEATS)
+  const safeTotal = totalSeats > 0 ? totalSeats : 1
+  const now = Date.now()
+
+  const newDocRef = doc(tablesCollectionRef)
+  const stored: FirestoreTable = {
+    game: input.game,
+    host: input.host,
+    seats: {
+      total: safeTotal,
+      taken: Math.min(safeTotal, 1),
+    },
+    start: input.start,
+    room: input.room,
+    description: input.description,
+    joinedBy: [deviceId],
+    createdAt: now,
+    updatedAt: now,
+  }
+
+  try {
+    await setDoc(newDocRef, stored)
+    markTableAsJoinedLocally(newDocRef.id)
+    return {
+      status: 'success',
+      message: 'Mesa publicada y plaza reservada para ti.',
+      table: mapFirestoreTable(newDocRef.id, stored, true),
+    }
+  } catch (error) {
+    console.error('No se pudo crear la mesa en Firestore', error)
+    return {
+      status: 'error',
+      message: 'No se pudo publicar la mesa. Inténtalo de nuevo en unos segundos.',
+    }
+  }
+}
+
+async function joinTableInFirestore(tableId: string, deviceId: string): Promise<TableActionResult> {
+  if (!tablesCollectionRef) {
+    return {
+      status: 'error',
+      message: 'No se pudo apuntar a la mesa. Prueba de nuevo en unos segundos.',
+    }
+  }
+
+  try {
+    const result = await runTransaction<FirestoreActionResult>(db, async (transaction) => {
+      const tableRef = doc(tablesCollectionRef, tableId)
+      const snapshot = await transaction.get(tableRef)
+
+      if (!snapshot.exists()) {
+        return {
+          status: 'error',
+          message: 'La mesa ya no está disponible.',
+        }
+      }
+
+      const rawData = snapshot.data() as FirestoreTable
+      const joinedBy = Array.isArray(rawData.joinedBy) ? [...rawData.joinedBy] : []
+      const totalSeats = clampSeats(rawData.seats?.total ?? 4, MAX_TOTAL_SEATS)
+      const takenSeats = clampSeats(rawData.seats?.taken ?? 0, totalSeats)
+
+      const normalizedData: FirestoreTable = {
+        ...rawData,
+        seats: {
+          total: totalSeats,
+          taken: takenSeats,
+        },
+        joinedBy,
+      }
+
+      if (joinedBy.includes(deviceId)) {
+        return {
+          status: 'already-joined',
+          message: `${rawData.game}: ya estás apuntado`,
+          data: normalizedData,
+        }
+      }
+
+      if (takenSeats >= totalSeats) {
+        return {
+          status: 'full',
+          message: `${rawData.game}: no quedan plazas libres`,
+          data: normalizedData,
+        }
+      }
+
+      const nextTaken = Math.min(totalSeats, takenSeats + 1)
+      const nextJoined = [...joinedBy, deviceId]
+
+      transaction.update(tableRef, {
+        seats: {
+          total: totalSeats,
+          taken: nextTaken,
+        },
+        joinedBy: nextJoined,
+        updatedAt: Date.now(),
+      })
+
+      return {
+        status: 'success',
+        message: `${rawData.game}: plaza reservada`,
+        data: {
+          ...normalizedData,
+          seats: {
+            total: totalSeats,
+            taken: nextTaken,
+          },
+          joinedBy: nextJoined,
+        },
+      }
+    })
+
+    if (result.data) {
+      const joined = Array.isArray(result.data.joinedBy) ? result.data.joinedBy.includes(deviceId) : false
+      if (joined) {
+        markTableAsJoinedLocally(tableId)
+      } else {
+        unmarkTableAsJoinedLocally(tableId)
+      }
+
+      return {
+        status: result.status,
+        message: result.message,
+        table: mapFirestoreTable(tableId, result.data, joined),
+      }
+    }
+
+    return {
+      status: result.status,
+      message: result.message,
+    }
+  } catch (error) {
+    console.error('No se pudo apuntar a la mesa en Firestore', error)
+    return {
+      status: 'error',
+      message: 'No se pudo apuntar a la mesa. Prueba de nuevo en unos segundos.',
+    }
+  }
+}
+
+function mapFirestoreTable(id: string, data: FirestoreTable, joined: boolean): TableRecord {
+  const totalSeats = clampSeats(data.seats?.total ?? 4, MAX_TOTAL_SEATS)
+  const takenSeats = clampSeats(data.seats?.taken ?? 0, totalSeats)
+
+  const createdAt = typeof data.createdAt === 'number' ? data.createdAt : Date.now()
+
+  return {
+    id,
+    game: data.game,
+    host: data.host,
+    seats: {
+      total: totalSeats,
+      taken: takenSeats,
+    },
+    start: data.start,
+    room: data.room,
+    description: data.description,
+    joined,
+    createdAt,
   }
 }
 
@@ -199,22 +499,33 @@ async function simulateDelay(ms = 120) {
 
 export async function fetchTables(): Promise<TableRecord[]> {
   await simulateDelay()
-  const tables = readTables()
+  if (useFirestore) {
+    const deviceId = getDeviceId()
+    return fetchTablesFromFirestore(deviceId)
+  }
+
+  const tables = readLocalTables()
   return tables
     .slice()
     .sort((first, second) => second.createdAt - first.createdAt)
-    .map(toRecord)
+    .map(localTableToRecord)
 }
 
 export async function createTableEntry(input: CreateTableInput): Promise<TableActionResult> {
   await simulateDelay(150)
+
+  if (useFirestore) {
+    const deviceId = getDeviceId()
+    return createTableInFirestore(input, deviceId)
+  }
+
   try {
-    const tables = readTables()
-    const totalSeats = clampSeats(input.seats, 8)
+    const tables = readLocalTables()
+    const totalSeats = clampSeats(input.seats, MAX_TOTAL_SEATS)
     const safeTotal = totalSeats > 0 ? totalSeats : 1
     const now = Date.now()
 
-    const storedTable: StoredTable = normalizeTable({
+    const storedTable: StoredTable = normalizeLocalTable({
       id: generateId(),
       game: input.game,
       host: input.host,
@@ -230,12 +541,13 @@ export async function createTableEntry(input: CreateTableInput): Promise<TableAc
     })
 
     const next = [storedTable, ...tables]
-    writeTables(next)
+    writeLocalTables(next)
+    markTableAsJoinedLocally(storedTable.id)
 
     return {
       status: 'success',
       message: 'Mesa publicada y plaza reservada para ti.',
-      table: toRecord(storedTable),
+      table: localTableToRecord(storedTable),
     }
   } catch (error) {
     console.error('No se pudo crear la mesa', error)
@@ -248,8 +560,14 @@ export async function createTableEntry(input: CreateTableInput): Promise<TableAc
 
 export async function joinTableEntry(tableId: string): Promise<TableActionResult> {
   await simulateDelay()
+
+  if (useFirestore) {
+    const deviceId = getDeviceId()
+    return joinTableInFirestore(tableId, deviceId)
+  }
+
   try {
-    const tables = readTables()
+    const tables = readLocalTables()
     const index = tables.findIndex((table) => table.id === tableId)
     if (index === -1) {
       return {
@@ -261,22 +579,24 @@ export async function joinTableEntry(tableId: string): Promise<TableActionResult
     const table = tables[index]
 
     if (table.joinedByLocal) {
+      markTableAsJoinedLocally(table.id)
       return {
         status: 'already-joined',
         message: `${table.game}: ya estás apuntado`,
-        table: toRecord(table),
+        table: localTableToRecord(table),
       }
     }
 
     if (table.seats.taken >= table.seats.total) {
+      unmarkTableAsJoinedLocally(table.id)
       return {
         status: 'full',
         message: `${table.game}: no quedan plazas libres`,
-        table: toRecord(table),
+        table: localTableToRecord(table),
       }
     }
 
-    const updated: StoredTable = normalizeTable({
+    const updated: StoredTable = normalizeLocalTable({
       ...table,
       seats: {
         total: table.seats.total,
@@ -287,12 +607,13 @@ export async function joinTableEntry(tableId: string): Promise<TableActionResult
 
     const next = [...tables]
     next[index] = updated
-    writeTables(next)
+    writeLocalTables(next)
+    markTableAsJoinedLocally(tableId)
 
     return {
       status: 'success',
       message: `${table.game}: plaza reservada`,
-      table: toRecord(updated),
+      table: localTableToRecord(updated),
     }
   } catch (error) {
     console.error('No se pudo apuntar a la mesa', error)
@@ -304,7 +625,13 @@ export async function joinTableEntry(tableId: string): Promise<TableActionResult
 }
 
 export function resetTablesForTests() {
-  writeTables(seedTables.map(cloneTable))
+  if (useFirestore) {
+    console.warn('resetTablesForTests solo está disponible en modo local.')
+    return
+  }
+
+  writeLocalTables(seedTables.map(cloneLocalTable))
+  persistJoinedTableIds(new Set())
 }
 
 type TablesState = {
@@ -338,7 +665,7 @@ export function useTablesService(): UseTablesService {
   }, [loadTables])
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
+    if (useFirestore || typeof window === 'undefined') {
       return
     }
 
@@ -401,4 +728,3 @@ export function useTablesService(): UseTablesService {
     [handleCreate, handleJoin, loadTables, state],
   )
 }
-
