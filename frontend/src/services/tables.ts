@@ -10,6 +10,7 @@ import {
   setDoc,
 } from 'firebase/firestore'
 import { db } from '../utils/firebase'
+import { getClientDeviceId, logActivity } from './activity'
 
 type StoredTable = {
   id: string
@@ -81,7 +82,6 @@ export type TableActionResult = {
 
 const STORAGE_KEY = 'clbsk_board_tables_v1'
 const JOINED_STORAGE_KEY = 'clbsk_board_joined_ids_v1'
-const DEVICE_ID_STORAGE_KEY = 'clbsk_board_device_id_v1'
 const FIRESTORE_COLLECTION = 'boardTables'
 const MAX_TOTAL_SEATS = 8
 
@@ -137,26 +137,6 @@ function getStorage(): Storage | null {
     console.error('No se pudo acceder a localStorage', error)
     return null
   }
-}
-
-function getDeviceId(): string {
-  const storage = getStorage()
-  if (!storage) {
-    return 'device-offline'
-  }
-
-  const existing = storage.getItem(DEVICE_ID_STORAGE_KEY)
-  if (existing) {
-    return existing
-  }
-
-  const randomValue =
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `device-${Math.random().toString(36).slice(2)}-${Date.now()}`
-
-  storage.setItem(DEVICE_ID_STORAGE_KEY, randomValue)
-  return randomValue
 }
 
 function readJoinedTableIds(): Set<string> {
@@ -374,6 +354,21 @@ async function createTableInFirestore(input: CreateTableInput, deviceId: string)
   try {
     await setDoc(newDocRef, stored)
     markTableAsJoinedLocally(newDocRef.id)
+    void logActivity(
+      {
+        type: 'table:create',
+        entityId: newDocRef.id,
+        entityName: input.game,
+        message: 'Mesa publicada en el tablón',
+        metadata: {
+          seatsTotal: safeTotal,
+          seatsTaken: Math.min(safeTotal, 1),
+          room: stored.room,
+          start: stored.start,
+        },
+      },
+      { deviceId },
+    )
     return {
       status: 'success',
       message: 'Mesa publicada y plaza reservada para ti.',
@@ -472,6 +467,23 @@ async function joinTableInFirestore(tableId: string, deviceId: string): Promise<
         unmarkTableAsJoinedLocally(tableId)
       }
 
+      if (result.status === 'success') {
+        const seatsInfo = result.data.seats ?? { total: null, taken: null }
+        void logActivity(
+          {
+            type: 'table:join',
+            entityId: tableId,
+            entityName: result.data.game,
+            message: 'Plaza reservada en la mesa',
+            metadata: {
+              seatsTotal: seatsInfo.total,
+              seatsTaken: seatsInfo.taken,
+            },
+          },
+          { deviceId },
+        )
+      }
+
       return {
         status: result.status,
         message: result.message,
@@ -545,7 +557,7 @@ async function simulateDelay(ms = 120) {
 export async function fetchTables(): Promise<TableRecord[]> {
   await simulateDelay()
   if (useFirestore) {
-    const deviceId = getDeviceId()
+    const deviceId = getClientDeviceId()
     return fetchTablesFromFirestore(deviceId)
   }
 
@@ -560,7 +572,7 @@ export async function createTableEntry(input: CreateTableInput): Promise<TableAc
   await simulateDelay(150)
 
   if (useFirestore) {
-    const deviceId = getDeviceId()
+    const deviceId = getClientDeviceId()
     return createTableInFirestore(input, deviceId)
   }
 
@@ -607,7 +619,7 @@ export async function joinTableEntry(tableId: string): Promise<TableActionResult
   await simulateDelay()
 
   if (useFirestore) {
-    const deviceId = getDeviceId()
+    const deviceId = getClientDeviceId()
     return joinTableInFirestore(tableId, deviceId)
   }
 
@@ -699,7 +711,7 @@ export function useTablesService(): UseTablesService {
       return
     }
 
-    const deviceId = getDeviceId()
+    const deviceId = getClientDeviceId()
 
     setState((current) => ({ ...current, loading: true, error: null }))
 

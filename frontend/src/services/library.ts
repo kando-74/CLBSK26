@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { collection, doc, getDocs, onSnapshot, orderBy, query, runTransaction, setDoc } from 'firebase/firestore'
+import {
+  collection,
+  doc,
+  getDocs,
+  onSnapshot,
+  orderBy,
+  query,
+  runTransaction,
+  setDoc,
+} from 'firebase/firestore'
 import { db } from '../utils/firebase'
+import { getClientDeviceId, logActivity } from './activity'
 
 export type LibraryGameRecord = {
   id: string
@@ -347,6 +357,23 @@ async function addGameToFirestore(input: LibraryGameInput): Promise<LibraryActio
       bggId: input.bggId,
       createdAt: timestamp,
     }
+
+    void logActivity(
+      {
+        type: 'library:add',
+        entityId: input.id,
+        entityName: input.title,
+        message: 'Juego añadido a la ludoteca',
+        metadata: {
+          owner: input.owner,
+          players: input.players,
+          duration: input.duration,
+          weight: input.weight,
+          language: input.language,
+        },
+      },
+      { deviceId: getClientDeviceId() },
+    )
 
     return {
       status: 'success',
