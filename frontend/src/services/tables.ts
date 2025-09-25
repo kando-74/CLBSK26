@@ -12,6 +12,11 @@ import {
 import { db } from '../utils/firebase'
 import { getClientDeviceId, logActivity } from './activity'
 
+type TableParticipant = {
+  deviceId: string | null
+  name: string
+}
+
 type StoredTable = {
   id: string
   game: string
@@ -25,6 +30,8 @@ type StoredTable = {
   description: string
   joinedByLocal: boolean
   createdAt: number
+  coverUrl?: string | null
+  participants?: TableParticipant[]
 }
 
 type FirestoreTable = {
@@ -40,6 +47,8 @@ type FirestoreTable = {
   joinedBy?: string[]
   createdAt: number
   updatedAt?: number
+  coverUrl?: string | null
+  participants?: TableParticipant[]
 }
 
 type FirestoreActionResult = {
@@ -61,6 +70,8 @@ export type TableRecord = {
   description: string
   joined: boolean
   createdAt: number
+  coverUrl?: string | null
+  participants: TableParticipant[]
 }
 
 export type CreateTableInput = {
@@ -70,6 +81,7 @@ export type CreateTableInput = {
   start: string
   room: string
   description: string
+  coverUrl?: string | null
 }
 
 export type TableActionStatus = 'success' | 'already-joined' | 'full' | 'error'
@@ -101,6 +113,8 @@ const seedTables: StoredTable[] = [
     description: 'Buscamos jugadoras con experiencia previa. Partida avanzada con módulos.',
     joinedByLocal: false,
     createdAt: new Date('2024-10-25T18:00:00Z').getTime(),
+    coverUrl: null,
+    participants: [{ deviceId: null, name: 'Lucía' }],
   },
   {
     id: 'table-scout',
@@ -112,6 +126,8 @@ const seedTables: StoredTable[] = [
     description: 'Ideal para partidas rápidas entre actividades. Explicación incluida.',
     joinedByLocal: false,
     createdAt: new Date('2024-10-25T17:30:00Z').getTime(),
+    coverUrl: null,
+    participants: [{ deviceId: null, name: 'Javi' }],
   },
   {
     id: 'table-earth',
@@ -123,6 +139,8 @@ const seedTables: StoredTable[] = [
     description: 'Buscamos un último hueco. Explicamos reglas y usamos expansión Boreal.',
     joinedByLocal: false,
     createdAt: new Date('2024-10-25T19:30:00Z').getTime(),
+    coverUrl: null,
+    participants: [{ deviceId: null, name: 'Marta' }],
   },
 ]
 
@@ -185,6 +203,15 @@ function unmarkTableAsJoinedLocally(tableId: string) {
 function normalizeLocalTable(entry: StoredTable | (StoredTable & { joined?: boolean })): StoredTable {
   const totalSeats = clampSeats(entry.seats?.total ?? 4)
   const takenSeats = clampSeats(entry.seats?.taken ?? 0, totalSeats)
+  const participants = Array.isArray((entry as StoredTable).participants)
+    ? (entry as StoredTable).participants!.map((participant) => ({
+        deviceId:
+          typeof participant.deviceId === 'string' || participant.deviceId === null
+            ? participant.deviceId
+            : null,
+        name: participant.name ?? entry.host,
+      }))
+    : [{ deviceId: null, name: entry.host }]
   return {
     id: entry.id,
     game: entry.game,
@@ -198,6 +225,8 @@ function normalizeLocalTable(entry: StoredTable | (StoredTable & { joined?: bool
     description: entry.description,
     joinedByLocal: entry.joinedByLocal ?? (entry as { joined?: boolean }).joined ?? false,
     createdAt: entry.createdAt,
+    coverUrl: 'coverUrl' in entry ? entry.coverUrl ?? null : null,
+    participants,
   }
 }
 
@@ -236,6 +265,7 @@ function cloneLocalTable(table: StoredTable): StoredTable {
   return {
     ...table,
     seats: { ...table.seats },
+    participants: table.participants ? table.participants.map((participant) => ({ ...participant })) : [],
   }
 }
 
@@ -250,6 +280,8 @@ function localTableToRecord(table: StoredTable): TableRecord {
     description: table.description,
     joined: table.joinedByLocal,
     createdAt: table.createdAt,
+    coverUrl: table.coverUrl ?? null,
+    participants: table.participants ? table.participants.map((participant) => ({ ...participant })) : [],
   }
 }
 
@@ -349,6 +381,13 @@ async function createTableInFirestore(input: CreateTableInput, deviceId: string)
     joinedBy: [deviceId],
     createdAt: now,
     updatedAt: now,
+    coverUrl: input.coverUrl ?? null,
+    participants: [
+      {
+        deviceId,
+        name: input.host,
+      },
+    ],
   }
 
   try {
@@ -383,7 +422,11 @@ async function createTableInFirestore(input: CreateTableInput, deviceId: string)
   }
 }
 
-async function joinTableInFirestore(tableId: string, deviceId: string): Promise<TableActionResult> {
+async function joinTableInFirestore(
+  tableId: string,
+  deviceId: string,
+  participantName: string,
+): Promise<TableActionResult> {
   if (!tablesCollectionRef) {
     return {
       status: 'error',
@@ -407,6 +450,15 @@ async function joinTableInFirestore(tableId: string, deviceId: string): Promise<
       const joinedBy = Array.isArray(rawData.joinedBy) ? [...rawData.joinedBy] : []
       const totalSeats = clampSeats(rawData.seats?.total ?? 4, MAX_TOTAL_SEATS)
       const takenSeats = clampSeats(rawData.seats?.taken ?? 0, totalSeats)
+      const participants = Array.isArray(rawData.participants)
+        ? rawData.participants.map((participant) => ({
+            deviceId:
+              typeof participant.deviceId === 'string' || participant.deviceId === null
+                ? participant.deviceId
+                : null,
+            name: participant.name ?? rawData.host,
+          }))
+        : [{ deviceId: null, name: rawData.host }]
 
       const normalizedData: FirestoreTable = {
         ...rawData,
@@ -415,6 +467,7 @@ async function joinTableInFirestore(tableId: string, deviceId: string): Promise<
           taken: takenSeats,
         },
         joinedBy,
+        participants,
       }
 
       if (joinedBy.includes(deviceId)) {
@@ -435,6 +488,10 @@ async function joinTableInFirestore(tableId: string, deviceId: string): Promise<
 
       const nextTaken = Math.min(totalSeats, takenSeats + 1)
       const nextJoined = [...joinedBy, deviceId]
+      const hasParticipant = participants.some((participant) => participant.deviceId === deviceId)
+      const nextParticipants = hasParticipant
+        ? participants
+        : [...participants, { deviceId, name: participantName }]
 
       transaction.update(tableRef, {
         seats: {
@@ -442,6 +499,7 @@ async function joinTableInFirestore(tableId: string, deviceId: string): Promise<
           taken: nextTaken,
         },
         joinedBy: nextJoined,
+        participants: nextParticipants,
         updatedAt: Date.now(),
       })
 
@@ -455,6 +513,7 @@ async function joinTableInFirestore(tableId: string, deviceId: string): Promise<
             taken: nextTaken,
           },
           joinedBy: nextJoined,
+          participants: nextParticipants,
         },
       }
     })
@@ -509,6 +568,17 @@ function mapFirestoreTable(id: string, data: FirestoreTable, joined: boolean): T
   const takenSeats = clampSeats(data.seats?.taken ?? 0, totalSeats)
 
   const createdAt = typeof data.createdAt === 'number' ? data.createdAt : Date.now()
+  const participants = Array.isArray(data.participants)
+    ? data.participants
+        .filter((participant) => participant && typeof participant.name === 'string')
+        .map((participant) => ({
+          deviceId:
+            typeof participant.deviceId === 'string' || participant.deviceId === null
+              ? participant.deviceId
+              : null,
+          name: participant.name ?? data.host,
+        }))
+    : [{ deviceId: null, name: data.host }]
 
   return {
     id,
@@ -523,6 +593,8 @@ function mapFirestoreTable(id: string, data: FirestoreTable, joined: boolean): T
     description: data.description,
     joined,
     createdAt,
+    coverUrl: data.coverUrl ?? null,
+    participants,
   }
 }
 
@@ -595,6 +667,13 @@ export async function createTableEntry(input: CreateTableInput): Promise<TableAc
       description: input.description,
       joinedByLocal: true,
       createdAt: now,
+      coverUrl: input.coverUrl ?? null,
+      participants: [
+        {
+          deviceId: null,
+          name: input.host,
+        },
+      ],
     })
 
     const next = [storedTable, ...tables]
@@ -615,12 +694,12 @@ export async function createTableEntry(input: CreateTableInput): Promise<TableAc
   }
 }
 
-export async function joinTableEntry(tableId: string): Promise<TableActionResult> {
+export async function joinTableEntry(tableId: string, participantName: string): Promise<TableActionResult> {
   await simulateDelay()
 
   if (useFirestore) {
     const deviceId = getClientDeviceId()
-    return joinTableInFirestore(tableId, deviceId)
+    return joinTableInFirestore(tableId, deviceId, participantName)
   }
 
   try {
@@ -637,10 +716,15 @@ export async function joinTableEntry(tableId: string): Promise<TableActionResult
 
     if (table.joinedByLocal) {
       markTableAsJoinedLocally(table.id)
+      const participants = table.participants ?? []
+      const hasParticipant = participants.some((participant) => participant.name === participantName)
+      if (!hasParticipant) {
+        table.participants = [...participants, { deviceId: null, name: participantName }]
+      }
       return {
         status: 'already-joined',
         message: `${table.game}: ya estás apuntado`,
-        table: localTableToRecord(table),
+        table: localTableToRecord({ ...table }),
       }
     }
 
@@ -649,7 +733,7 @@ export async function joinTableEntry(tableId: string): Promise<TableActionResult
       return {
         status: 'full',
         message: `${table.game}: no quedan plazas libres`,
-        table: localTableToRecord(table),
+        table: localTableToRecord({ ...table }),
       }
     }
 
@@ -660,6 +744,7 @@ export async function joinTableEntry(tableId: string): Promise<TableActionResult
         taken: Math.min(table.seats.total, table.seats.taken + 1),
       },
       joinedByLocal: true,
+      participants: [...(table.participants ?? []), { deviceId: null, name: participantName }],
     })
 
     const next = [...tables]
@@ -700,7 +785,7 @@ type TablesState = {
 type UseTablesService = TablesState & {
   refresh: () => Promise<void>
   createTable: (input: CreateTableInput) => Promise<TableActionResult>
-  joinTable: (tableId: string) => Promise<TableActionResult>
+  joinTable: (tableId: string, participantName: string) => Promise<TableActionResult>
 }
 
 export function useTablesService(): UseTablesService {
@@ -781,8 +866,8 @@ export function useTablesService(): UseTablesService {
     return result
   }, [])
 
-  const handleJoin = useCallback(async (tableId: string) => {
-    const result = await joinTableEntry(tableId)
+  const handleJoin = useCallback(async (tableId: string, participantName: string) => {
+    const result = await joinTableEntry(tableId, participantName)
     if (result.table) {
       setState((current) => ({
         loading: false,

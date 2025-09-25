@@ -460,6 +460,7 @@ export function Library() {
         start,
         room,
         description,
+        coverUrl: tableDraft.game.coverUrl ?? undefined,
       })
 
       if (result.status === 'success') {

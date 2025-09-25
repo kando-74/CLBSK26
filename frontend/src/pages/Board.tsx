@@ -112,7 +112,7 @@ export function Board() {
   async function handleJoin(tableId: string) {
     setPendingJoinId(tableId)
     try {
-      const result = await joinTable(tableId)
+      const result = await joinTable(tableId, userDisplayName)
       setActionFeedback({
         message: result.message,
         tone: mapStatusToTone(result.status),
@@ -417,6 +417,7 @@ export function Board() {
                   <p className="text-xs uppercase tracking-wide text-text-secondary">Juego</p>
                   <GameTitle
                     name={table.game}
+                    coverUrl={table.coverUrl ?? undefined}
                     size="md"
                     textClassName="text-xl"
                     role="heading"
@@ -447,6 +448,19 @@ export function Board() {
                 </div>
               </div>
               <p className="text-sm text-text-secondary">{table.description}</p>
+              {table.participants.length > 0 && (
+                <div className="flex flex-wrap gap-2 text-xs text-text-secondary">
+                  <span className="rounded-full bg-background px-3 py-1 font-semibold text-text-primary">Apuntados</span>
+                  {table.participants.map((participant) => (
+                    <span
+                      key={`${table.id}-${participant.deviceId ?? participant.name}`}
+                      className="rounded-full bg-background px-3 py-1"
+                    >
+                      {participant.name}
+                    </span>
+                  ))}
+                </div>
+              )}
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
                   <p className="flex items-center gap-2 text-text-primary">
