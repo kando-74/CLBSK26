@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { collection, doc, getDocs, orderBy, query, runTransaction, setDoc } from 'firebase/firestore'
+import { collection, doc, getDocs, onSnapshot, orderBy, query, runTransaction, setDoc } from 'firebase/firestore'
 import { db } from '../utils/firebase'
 
 export type LibraryGameRecord = {
@@ -240,10 +240,44 @@ async function fetchGamesFromFirestore(): Promise<LibraryGameRecord[]> {
   if (snapshot.empty) {
     await seedFirestoreGames()
     const seededSnapshot = await getDocs(query(collectionRef, orderBy('title')))
-    return seededSnapshot.docs.map((document) => mapFirestoreGame(document.id, document.data() as FirestoreGame))
+    return seededSnapshot.docs
+      .map((document) => mapFirestoreGame(document.id, document.data() as FirestoreGame))
+      .sort((first, second) => first.title.localeCompare(second.title, 'es', { sensitivity: 'base' }))
   }
 
-  return snapshot.docs.map((document) => mapFirestoreGame(document.id, document.data() as FirestoreGame))
+  return snapshot.docs
+    .map((document) => mapFirestoreGame(document.id, document.data() as FirestoreGame))
+    .sort((first, second) => first.title.localeCompare(second.title, 'es', { sensitivity: 'base' }))
+}
+
+function subscribeLibraryGames(
+  onUpdate: (games: LibraryGameRecord[]) => void,
+  onError: (message: string) => void,
+): () => void {
+  if (!collectionRef) {
+    return () => {}
+  }
+
+  const q = query(collectionRef, orderBy('title'))
+
+  const unsubscribe = onSnapshot(
+    q,
+    (snapshot) => {
+      const games = snapshot.docs
+        .map((document) => mapFirestoreGame(document.id, document.data() as FirestoreGame))
+        .sort((first, second) => first.title.localeCompare(second.title, 'es', { sensitivity: 'base' }))
+
+      onUpdate(games)
+    },
+    (error) => {
+      console.error('Error de sincronización en tiempo real de la ludoteca', error)
+      onError('No se pudo sincronizar la ludoteca en tiempo real. Revisa tu conexión.')
+    },
+  )
+
+  return () => {
+    unsubscribe()
+  }
 }
 
 export async function fetchLibraryGames(): Promise<LibraryGameRecord[]> {
@@ -387,7 +421,53 @@ type UseLibraryService = LibraryState & {
 export function useLibraryService(): UseLibraryService {
   const [state, setState] = useState<LibraryState>({ loading: true, error: null, games: [] })
 
+  useEffect(() => {
+    if (!useFirestore) {
+      return
+    }
+
+    let cancelled = false
+    let unsubscribe: (() => void) | null = null
+
+    setState((current) => ({ ...current, loading: true, error: null }))
+
+    void fetchLibraryGames()
+      .then((list) => {
+        if (cancelled) {
+          return
+        }
+
+        setState({ loading: false, error: null, games: list })
+
+        unsubscribe = subscribeLibraryGames(
+          (games) => {
+            setState({ loading: false, error: null, games })
+          },
+          (message) => {
+            setState((current) => ({ ...current, loading: false, error: message }))
+          },
+        )
+      })
+      .catch((error) => {
+        console.error('Error inicial al cargar la ludoteca', error)
+        if (!cancelled) {
+          setState({ loading: false, error: 'No se pudo cargar la ludoteca. Intenta recargar.', games: [] })
+        }
+      })
+
+    return () => {
+      cancelled = true
+      if (unsubscribe) {
+        unsubscribe()
+      }
+    }
+  }, [])
+
   const loadGames = useCallback(async () => {
+    if (useFirestore) {
+      return
+    }
+
     setState((current) => ({ ...current, loading: true, error: null }))
     try {
       const list = await fetchLibraryGames()
@@ -403,6 +483,10 @@ export function useLibraryService(): UseLibraryService {
   }, [])
 
   useEffect(() => {
+    if (useFirestore) {
+      return
+    }
+
     void loadGames()
   }, [loadGames])
 
