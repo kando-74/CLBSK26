@@ -1,8 +1,22 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { CalendarCheck, Clock, MapPin, Plus } from 'lucide-react'
 import { GameTitle } from '../components/GameTitle'
 
-const initialTables = [
+type Table = {
+  id: number
+  game: string
+  host: string
+  seats: {
+    taken: number
+    total: number
+  }
+  start: string
+  room: string
+  description: string
+  joined?: boolean
+}
+
+const initialTables: Table[] = [
   {
     id: 1,
     game: 'Revive',
@@ -33,9 +47,7 @@ const initialTables = [
 ]
 
 export function Board() {
-  const [tables, setTables] = useState(
-    () => initialTables.map((table) => ({ ...table, joined: false as boolean })),
-  )
+  const [tables, setTables] = useState<Table[]>(() => initialTables.map((table) => ({ ...table, joined: false })))
   const [showFilters, setShowFilters] = useState(false)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
@@ -131,7 +143,7 @@ export function Board() {
     })
   }
 
-  function handleCreateTable(event: React.FormEvent<HTMLFormElement>) {
+  function handleCreateTable(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const trimmedGame = newTable.game.trim()
     const trimmedRoom = newTable.room.trim()
@@ -221,7 +233,7 @@ export function Board() {
               <input
                 className="w-full bg-transparent text-base text-text-primary outline-none"
                 value={newTable.game}
-                onChange={(event) => setNewTable((current) => ({ ...current, game: event.target.value }))}
+                onChange={(event) => setNewTable((current) => ({ ...current, game: event.currentTarget.value }))}
                 placeholder="Nombre del juego"
                 required
               />
@@ -231,7 +243,7 @@ export function Board() {
               <input
                 className="w-full bg-transparent text-base text-text-primary outline-none"
                 value={newTable.host}
-                onChange={(event) => setNewTable((current) => ({ ...current, host: event.target.value }))}
+                onChange={(event) => setNewTable((current) => ({ ...current, host: event.currentTarget.value }))}
                 placeholder="Tu nombre o alias"
               />
             </label>
@@ -244,7 +256,7 @@ export function Board() {
                 className="w-full bg-transparent text-base text-text-primary outline-none"
                 value={newTable.seats}
                 onChange={(event) =>
-                  setNewTable((current) => ({ ...current, seats: Number(event.target.value) || 1 }))
+                  setNewTable((current) => ({ ...current, seats: Number(event.currentTarget.value) || 1 }))
                 }
               />
             </label>
@@ -253,7 +265,7 @@ export function Board() {
               <input
                 className="w-full bg-transparent text-base text-text-primary outline-none"
                 value={newTable.start}
-                onChange={(event) => setNewTable((current) => ({ ...current, start: event.target.value }))}
+                onChange={(event) => setNewTable((current) => ({ ...current, start: event.currentTarget.value }))}
                 placeholder="Ej. 19:30"
               />
             </label>
@@ -262,7 +274,7 @@ export function Board() {
               <input
                 className="w-full bg-transparent text-base text-text-primary outline-none"
                 value={newTable.room}
-                onChange={(event) => setNewTable((current) => ({ ...current, room: event.target.value }))}
+                onChange={(event) => setNewTable((current) => ({ ...current, room: event.currentTarget.value }))}
                 placeholder="Sala o ubicación"
               />
             </label>
@@ -271,7 +283,7 @@ export function Board() {
               <textarea
                 className="h-24 w-full resize-none bg-transparent text-sm text-text-secondary outline-none"
                 value={newTable.description}
-                onChange={(event) => setNewTable((current) => ({ ...current, description: event.target.value }))}
+                onChange={(event) => setNewTable((current) => ({ ...current, description: event.currentTarget.value }))}
                 placeholder="Añade detalles relevantes: nivel, módulos, si explicas reglas..."
                 required
               />
@@ -315,7 +327,7 @@ export function Board() {
               <select
                 className="mt-2 w-full bg-transparent text-base text-text-primary outline-none"
                 value={filters.room}
-                onChange={(event) => setFilters((current) => ({ ...current, room: event.target.value }))}
+                onChange={(event) => setFilters((current) => ({ ...current, room: event.currentTarget.value }))}
               >
                 {availableRooms.map((roomOption) => (
                   <option key={roomOption} value={roomOption}>

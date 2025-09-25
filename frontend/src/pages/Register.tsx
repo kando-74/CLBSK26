@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CalendarClock, ChevronLeft, ChevronRight, Crown } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
 
 const steps = [
   {
@@ -22,12 +23,25 @@ const steps = [
 
 const players = ['Ana', 'Luis', 'María', 'Jorge', 'Claudia', 'Inés', 'Raúl']
 
+type RegisterLocationState = {
+  preselectedGame?: string
+}
+
 export function Register() {
+  const location = useLocation()
+  const preselectedGame = (location.state as RegisterLocationState | null)?.preselectedGame
   const [step, setStep] = useState(0)
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>(['Ana', 'Luis'])
   const [winner, setWinner] = useState('Ana')
+  const [selectedGame, setSelectedGame] = useState(preselectedGame ?? 'Heat: Pedal to the Metal')
 
   const progress = useMemo(() => ((step + 1) / steps.length) * 100, [step])
+
+  useEffect(() => {
+    if (preselectedGame) {
+      setSelectedGame(preselectedGame)
+    }
+  }, [preselectedGame])
 
   return (
     <div className="space-y-6 pb-10">
@@ -88,7 +102,9 @@ export function Register() {
                   <span className="text-xs uppercase tracking-wide text-text-secondary">Juego de la ludoteca</span>
                   <input
                     className="mt-1 w-full bg-transparent text-base font-semibold text-text-primary outline-none"
-                    defaultValue="Heat: Pedal to the Metal"
+                    value={selectedGame}
+                    onChange={(event) => setSelectedGame(event.currentTarget.value)}
+                    placeholder="Selecciona un juego"
                   />
                 </label>
                 <label className="rounded-2xl border border-dashed border-primary/40 px-4 py-3">
@@ -100,7 +116,7 @@ export function Register() {
                 </label>
               </div>
               <button className="inline-flex items-center justify-center rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90">
-                Continuar con Heat
+                {selectedGame ? `Continuar con ${selectedGame}` : 'Selecciona un juego'}
               </button>
             </div>
           )}
@@ -217,7 +233,7 @@ export function Register() {
           <h3 className="text-lg font-semibold text-text-primary">Resumen</h3>
           <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
             <p className="text-xs uppercase tracking-wide">Juego</p>
-            <p className="text-base font-semibold text-text-primary">Heat: Pedal to the Metal</p>
+            <p className="text-base font-semibold text-text-primary">{selectedGame || 'Pendiente de seleccionar'}</p>
             <p>Propietario: Claudia</p>
           </div>
           <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   BookmarkCheck,
   Download,
@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import type { BggSearchResult } from '../utils/bgg'
 import { getBoardGameDetails, searchBoardGames } from '../utils/bgg'
+import { useNavigate } from 'react-router-dom'
 import { GameTitle } from '../components/GameTitle'
 
 interface GameEntry {
@@ -77,7 +78,67 @@ const initialLibrary: GameEntry[] = [
   },
 ]
 
-const presetFilters = ['Favoritos', 'Novedades', 'Familiares <45 min']
+type BuiltinFilter = {
+  id: string
+  label: string
+  type: 'builtin'
+  apply: (game: GameEntry) => boolean
+}
+
+type SearchFilter = {
+  id: string
+  label: string
+  type: 'search'
+  term: string
+}
+
+type SavedFilter = BuiltinFilter | SearchFilter
+
+function getMaxDurationMinutes(label: string): number | null {
+  const matches = label.match(/\d+/g)
+
+  if (!matches || matches.length === 0) {
+    return null
+  }
+
+  const values = matches.map((value) => Number.parseInt(value, 10)).filter(Number.isFinite)
+
+  if (values.length === 0) {
+    return null
+  }
+
+  return Math.max(...values)
+}
+
+function matchesSearchTerm(game: GameEntry, term: string) {
+  const normalizedTerm = term.toLowerCase()
+  const haystack = `${game.title} ${game.owner} ${game.mechanics.join(' ')} ${game.language}`.toLowerCase()
+  return haystack.includes(normalizedTerm)
+}
+
+const builtinFilters: BuiltinFilter[] = [
+  {
+    id: 'favoritos',
+    label: 'Favoritos',
+    type: 'builtin',
+    apply: (game) => Boolean(game.manual),
+  },
+  {
+    id: 'novedades',
+    label: 'Novedades',
+    type: 'builtin',
+    apply: (game) => !game.manual,
+  },
+  {
+    id: 'familiares',
+    label: 'Familiares <45 min',
+    type: 'builtin',
+    apply: (game) => {
+      const maxDuration = getMaxDurationMinutes(game.duration)
+      return maxDuration !== null && maxDuration <= 45
+    },
+  },
+]
 
 export function Library() {
   const [search, setSearch] = useState('')
@@ -90,19 +151,55 @@ export function Library() {
   const [importMessage, setImportMessage] = useState<
     { type: 'success' | 'error'; message: string } | null
   >(null)
+  const [savedFilters, setSavedFilters] = useState<SavedFilter[]>(builtinFilters)
+  const [activeFilterId, setActiveFilterId] = useState<string | null>(null)
+  const [showFilterEditor, setShowFilterEditor] = useState(false)
+  const [newFilterName, setNewFilterName] = useState('')
+  const [filterError, setFilterError] = useState<string | null>(null)
+  const [infoMessage, setInfoMessage] = useState<string | null>(null)
+
+  const importSectionRef = useRef<HTMLDivElement | null>(null)
+  const navigate = useNavigate()
+
+  const activeFilter = useMemo(
+    () => savedFilters.find((filter) => filter.id === activeFilterId) ?? null,
+    [activeFilterId, savedFilters],
+  )
 
   const filtered = useMemo(() => {
+    let current = games
+
+    if (activeFilter) {
+      if (activeFilter.type === 'builtin') {
+        current = current.filter(activeFilter.apply)
+      } else if (activeFilter.term) {
+        current = current.filter((game) => matchesSearchTerm(game, activeFilter.term))
+      }
+    }
+
     const term = search.toLowerCase().trim()
 
     if (!term) {
-      return games
+      return current
     }
 
-    return games.filter((item) => {
-      const haystack = `${item.title} ${item.owner} ${item.mechanics.join(' ')}`.toLowerCase()
-      return haystack.includes(term)
-    })
-  }, [games, search])
+    return current.filter((item) => matchesSearchTerm(item, term))
+  }, [activeFilter, games, search])
+
+  useEffect(() => {
+    if (!infoMessage) {
+      return
+    }
+
+    const timeout = setTimeout(() => setInfoMessage(null), 4000)
+    return () => clearTimeout(timeout)
+  }, [infoMessage])
+
+  useEffect(() => {
+    if (activeFilter?.type === 'search') {
+      setSearch(activeFilter.term)
+    }
+  }, [activeFilter])
 
   async function handleBggSearch() {
     const query = bggQuery.trim()
@@ -227,6 +324,78 @@ export function Library() {
     }
   }
 
+  const handleScrollToImport = useCallback(() => {
+    importSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
+
+  const handleSelectFilter = useCallback(
+    (filterId: string) => {
+      setActiveFilterId((current) => {
+        if (current === filterId) {
+          setInfoMessage('Filtro desactivado.')
+          return null
+        }
+
+        const nextFilter = savedFilters.find((filter) => filter.id === filterId)
+        if (nextFilter) {
+          setInfoMessage(`Aplicado filtro "${nextFilter.label}".`)
+        }
+
+        return filterId
+      })
+
+      setShowFilterEditor(false)
+      setFilterError(null)
+    },
+    [savedFilters],
+  )
+
+  const handleSaveFilter = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      const trimmedName = newFilterName.trim()
+      const term = search.trim()
+
+      if (!trimmedName) {
+        setFilterError('Introduce un nombre para el filtro guardado.')
+        return
+      }
+
+      if (!term) {
+        setFilterError('Aplica una búsqueda antes de guardar el filtro.')
+        return
+      }
+
+      const exists = savedFilters.some((filter) => filter.label.toLowerCase() === trimmedName.toLowerCase())
+      if (exists) {
+        setFilterError('Ya existe un filtro con ese nombre.')
+        return
+      }
+
+      const newFilter: SearchFilter = {
+        id: `custom-${Date.now()}`,
+        label: trimmedName,
+        type: 'search',
+        term,
+      }
+
+      setSavedFilters((current) => [...current, newFilter])
+      setActiveFilterId(newFilter.id)
+      setShowFilterEditor(false)
+      setNewFilterName('')
+      setFilterError(null)
+      setInfoMessage('Filtro guardado correctamente.')
+    },
+    [newFilterName, savedFilters, search],
+  )
+
+  const handleRegisterGame = useCallback(
+    (game: GameEntry) => {
+      navigate('/registrar', { state: { preselectedGame: game.title } })
+    },
+    [navigate],
+  )
+
   return (
     <div className="space-y-6 pb-10">
       <header className="space-y-4">
@@ -235,7 +404,10 @@ export function Library() {
             <h2 className="section-title">Ludoteca del evento</h2>
             <p className="text-sm text-text-secondary">Añade tus juegos y explora la colección disponible durante el congreso.</p>
           </div>
-          <button className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90">
+          <button
+            onClick={handleScrollToImport}
+            className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
+          >
             <Star className="h-4 w-4" />
             Añadir juego
           </button>
@@ -245,7 +417,7 @@ export function Library() {
             <Search className="h-5 w-5 text-text-secondary" />
             <input
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => setSearch(event.currentTarget.value)}
               placeholder="Buscar por nombre, propietario o mecánica"
               className="w-full bg-transparent text-sm text-text-primary outline-none placeholder:text-text-secondary"
             />
@@ -253,42 +425,101 @@ export function Library() {
           <div className="card flex items-center justify-between px-4 py-3 text-sm text-text-secondary">
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4" />
-              <span>Filtros activos: Jugadores 3-4, Idioma ES</span>
+              <span>
+                {activeFilter
+                  ? `Filtro activo: ${activeFilter.label}`
+                  : 'Sin filtros adicionales'}
+              </span>
             </div>
-            <button className="text-sm font-semibold text-primary">Editar</button>
+            <button
+              onClick={() => {
+                setShowFilterEditor((value) => !value)
+                setFilterError(null)
+              }}
+              className="text-sm font-semibold text-primary"
+            >
+              {showFilterEditor ? 'Cerrar' : 'Gestionar filtros'}
+            </button>
           </div>
         </div>
       </header>
 
+      {infoMessage && (
+        <div className="rounded-2xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm font-medium text-primary">
+          {infoMessage}
+        </div>
+      )}
+
       <section className="space-y-3">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-text-secondary">Filtros guardados</h3>
         <div className="flex flex-wrap gap-2">
-          {presetFilters.map((filter) => (
+          {savedFilters.map((filter) => (
             <button
-              key={filter}
-              className="rounded-full bg-background px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-primary/10 hover:text-primary"
+              key={filter.id}
+              onClick={() => handleSelectFilter(filter.id)}
+              className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                activeFilterId === filter.id
+                  ? 'bg-primary text-white shadow-card'
+                  : 'bg-background text-text-secondary hover:bg-primary/10 hover:text-primary'
+              }`}
             >
-              {filter}
+              {filter.label}
             </button>
           ))}
-          <button className="inline-flex items-center gap-2 rounded-full border border-dashed border-primary px-4 py-2 text-sm font-medium text-primary">
+          <button
+            onClick={() => {
+              setShowFilterEditor(true)
+              setFilterError(null)
+              setNewFilterName('')
+            }}
+            className="inline-flex items-center gap-2 rounded-full border border-dashed border-primary px-4 py-2 text-sm font-medium text-primary"
+          >
             <BookmarkCheck className="h-4 w-4" />
             Guardar filtro
           </button>
         </div>
       </section>
 
+      {showFilterEditor && (
+        <section className="card space-y-4 p-5">
+          <h3 className="text-base font-semibold text-text-primary">Crear filtro personalizado</h3>
+          <p className="text-sm text-text-secondary">
+            Se guardará usando la búsqueda actual (`{search.trim() || 'sin término'}`). Puedes seleccionar el filtro más tarde
+            desde la lista superior.
+          </p>
+          <form onSubmit={handleSaveFilter} className="flex flex-col gap-3 md:flex-row md:items-end">
+            <label className="flex grow flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
+              <span className="text-xs uppercase tracking-wide">Nombre del filtro</span>
+              <input
+                className="w-full bg-transparent text-base text-text-primary outline-none"
+                value={newFilterName}
+                onChange={(event) => setNewFilterName(event.currentTarget.value)}
+                placeholder="Ej. Eurogames favoritos"
+                required
+              />
+            </label>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
+            >
+              Guardar filtro
+            </button>
+          </form>
+          {filterError && <p className="text-sm text-error">{filterError}</p>}
+        </section>
+      )}
+
       <section className="space-y-3">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-text-secondary">
           Importar desde BoardGameGeek
         </h3>
-        <div className="card space-y-4 p-5">
+        <div ref={importSectionRef} className="card space-y-4 p-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <label className="flex grow items-center gap-3 rounded-xl bg-background px-4 py-2">
               <Search className="h-5 w-5 text-text-secondary" />
               <input
                 value={bggQuery}
-                onChange={(event) => setBggQuery(event.target.value)}
+                onChange={(event) => setBggQuery(event.currentTarget.value)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
                     event.preventDefault()
@@ -425,7 +656,12 @@ export function Library() {
               ))}
             </div>
             <div className="flex items-center justify-between pt-2">
-              <button className="text-sm font-semibold text-primary">Registrar partida</button>
+              <button
+                onClick={() => handleRegisterGame(game)}
+                className="text-sm font-semibold text-primary"
+              >
+                Registrar partida
+              </button>
               <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
                 <Users className="h-4 w-4" />
                 Ideal 4 jugadores

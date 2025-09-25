@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowDownToLine, BarChart3, LineChart, Timer, Trophy, Users } from 'lucide-react'
 import { clsx } from 'clsx'
 import { getCurrentCongressDay } from '../utils/date'
@@ -140,6 +140,7 @@ function formatMinutes(minutes: number) {
 
 export function Statistics() {
   const [activeTab, setActiveTab] = useState<StatsTab>('global')
+  const [exportStatus, setExportStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const day = getCurrentCongressDay()
 
   const maxHourValue = useMemo(
@@ -165,6 +166,46 @@ export function Statistics() {
     [],
   )
 
+  useEffect(() => {
+    if (!exportStatus) {
+      return
+    }
+
+    const timeout = setTimeout(() => setExportStatus(null), 4000)
+    return () => clearTimeout(timeout)
+  }, [exportStatus])
+
+  const handleDownloadCsv = useCallback(() => {
+    try {
+      const rows: string[][] = [
+        ['Sección', 'Métrica', 'Valor', 'Detalle'],
+        ...globalMetrics.map((metric) => ['Global', metric.label, metric.value, metric.trend]),
+        ...hourlyDistribution.map((item) => ['Horarios', item.hour, String(item.value), 'Partidas registradas']),
+        ...dayComparison.map((item) => ['Comparativa días', item.label, String(item.value), item.detail]),
+        ...personalMetrics.map((metric) => ['Personal', metric.label, metric.value, metric.trend]),
+      ]
+
+      const csvContent = rows
+        .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
+        .join('\n')
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `estadisticas-clbsk-${day.label.replace(/\s+/g, '-').toLowerCase()}.csv`
+      link.click()
+      URL.revokeObjectURL(url)
+
+      setExportStatus({ type: 'success', message: 'Exportación generada correctamente.' })
+    } catch (error) {
+      setExportStatus({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'No se pudo generar el CSV.',
+      })
+    }
+  }, [day.label])
+
   return (
     <div className="space-y-6 pb-10">
       <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -178,11 +219,26 @@ export function Statistics() {
             Resumen para el {day.label}
           </p>
         </div>
-        <button className="inline-flex items-center gap-2 rounded-full border border-primary px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white">
+        <button
+          onClick={handleDownloadCsv}
+          className="inline-flex items-center gap-2 rounded-full border border-primary px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
+        >
           <ArrowDownToLine className="h-4 w-4" />
           Descargar CSV (organización)
         </button>
       </header>
+
+      {exportStatus && (
+        <div
+          className={`rounded-2xl border px-4 py-3 text-sm font-medium ${
+            exportStatus.type === 'success'
+              ? 'border-primary/30 bg-primary/10 text-primary'
+              : 'border-error/30 bg-error/10 text-error'
+          }`}
+        >
+          {exportStatus.message}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <button
