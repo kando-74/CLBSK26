@@ -4,13 +4,11 @@
     "version":  "0.0.0",
     "type":  "module",
     "scripts":  {
-                    "prepare":  "husky",
-                    "preview":  "vite preview",
+                    "dev":  "vite",
                     "build":  "tsc -b \u0026\u0026 vite build",
                     "lint":  "eslint .",
-                    "format":  "prettier --write .",
-                    "format:check":  "prettier --check .",
-                    "dev":  "vite"
+                    "preview":  "vite preview",
+                    "prepare":  "husky"
                 },
     "dependencies":  {
                          "clsx":  "^2.1.1",
