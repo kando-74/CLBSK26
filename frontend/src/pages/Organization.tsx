@@ -19,6 +19,13 @@ import {
 } from 'lucide-react'
 import { getCurrentCongressDay } from '../utils/date'
 import { GameTitle } from '../components/GameTitle'
+import {
+  getClientDeviceId,
+  isActivityLoggingEnabled,
+  logActivity,
+  subscribeActivityLogs,
+  type ActivityLogRecord,
+} from '../services/activity'
 
 type PanelTab = 'attendees' | 'whitelist' | 'duplicates' | 'exports'
 
@@ -63,12 +70,6 @@ type ExportPreset = {
   label: string
   description: string
   size: string
-}
-
-type AuditEntry = {
-  id: number
-  message: string
-  at: string
 }
 
 const initialAttendees: Attendee[] = [
@@ -193,24 +194,6 @@ const initialExportPresets: ExportPreset[] = [
   },
 ]
 
-const initialAuditLog: AuditEntry[] = [
-  {
-    id: 1,
-    message: 'Lucía aprobó la solicitud de staff.sala3@example.com',
-    at: 'Hace 2 min',
-  },
-  {
-    id: 2,
-    message: 'Jorge marcó duplicado dup-1031 como “En revisión”',
-    at: 'Hace 18 min',
-  },
-  {
-    id: 3,
-    message: 'Sistema generó exportación "Partidas del día"',
-    at: 'Hoy · 09:00',
-  },
-]
-
 const tabs: { key: PanelTab; label: string; icon: typeof Users }[] = [
   { key: 'attendees', label: 'Asistentes', icon: Users },
   { key: 'whitelist', label: 'Whitelist', icon: UserCheck },
@@ -295,13 +278,43 @@ function getDuplicateStatusStyles(status: DuplicateStatus) {
   }
 }
 
+const activityDateFormatter = new Intl.DateTimeFormat('es-ES', {
+  dateStyle: 'short',
+  timeStyle: 'short',
+})
+
+function formatActivityMessage(entry: ActivityLogRecord) {
+  if (entry.message) {
+    return entry.message
+  }
+
+  switch (entry.type) {
+    case 'table:create':
+      return `Nueva mesa publicada: ${entry.entityName}`
+    case 'table:join':
+      return `Reserva en la mesa ${entry.entityName}`
+    case 'library:add':
+      return `Juego añadido a la ludoteca: ${entry.entityName}`
+    default:
+      return entry.entityName
+  }
+}
+
+function formatActivitySubtitle(entry: ActivityLogRecord) {
+  const actorName = entry.actor?.displayName ?? entry.actor?.email ?? 'Sistema'
+  const timestamp = entry.createdAt ? activityDateFormatter.format(entry.createdAt) : 'Sincronizando…'
+  const device = entry.deviceId ? ` · ${entry.deviceId}` : ''
+  return `${actorName} · ${timestamp}${device}`
+}
+
 export function Organization() {
   const [activeTab, setActiveTab] = useState<PanelTab>('attendees')
   const [attendeeList] = useState<Attendee[]>(initialAttendees)
   const [attendeeSearch, setAttendeeSearch] = useState('')
   const [whitelistList, setWhitelistList] = useState<WhitelistEntry[]>(initialWhitelistEntries)
   const [duplicateList, setDuplicateList] = useState<DuplicateAlert[]>(initialDuplicateAlerts)
-  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>(initialAuditLog)
+  const [activityLogs, setActivityLogs] = useState<ActivityLogRecord[]>([])
+  const [activityError, setActivityError] = useState<string | null>(null)
   const [panelMessage, setPanelMessage] = useState<
     { type: 'success' | 'error' | 'info'; message: string } | null
   >(null)
@@ -360,15 +373,56 @@ export function Organization() {
     }
   }, [filteredAttendees, selectedAttendee])
 
-  const addAuditEntry = useCallback((message: string) => {
-    setAuditEntries((current) => [
-      {
-        id: Date.now(),
-        message,
-        at: 'Hace unos segundos',
+  useEffect(() => {
+    if (!isActivityLoggingEnabled) {
+      return
+    }
+
+    const unsubscribe = subscribeActivityLogs(
+      40,
+      (logs) => {
+        setActivityError(null)
+        setActivityLogs(logs)
       },
-      ...current,
-    ].slice(0, 12))
+      (message) => {
+        setActivityError(message)
+      },
+    )
+
+    return () => {
+      unsubscribe()
+    }
+  }, [])
+
+  const addAuditEntry = useCallback((message: string) => {
+    const deviceId = getClientDeviceId()
+
+    if (isActivityLoggingEnabled) {
+      void logActivity(
+        {
+          type: 'organization:note',
+          entityId: 'organization-panel',
+          entityName: 'Panel de organización',
+          message,
+        },
+        { deviceId },
+      )
+    } else {
+      setActivityLogs((current) => [
+        {
+          id: `local-${Date.now()}`,
+          type: 'organization:note',
+          entityId: 'organization-panel',
+          entityName: 'Panel de organización',
+          message,
+          metadata: null,
+          actor: null,
+          deviceId,
+          createdAt: new Date(),
+        },
+        ...current,
+      ].slice(0, 40))
+    }
   }, [])
 
   const handleDownloadAttendees = useCallback(() => {
@@ -908,10 +962,20 @@ export function Organization() {
               <div className="card space-y-2 p-4">
                 <h3 className="text-base font-semibold text-text-primary">Historial de acciones</h3>
                 <ul className="space-y-2 text-xs text-text-secondary">
-                  {auditEntries.map((entry) => (
+                  {activityError && (
+                    <li className="rounded-xl bg-error/10 px-3 py-2 text-error">
+                      {activityError}
+                    </li>
+                  )}
+                  {!activityError && activityLogs.length === 0 && (
+                    <li className="rounded-xl bg-background px-3 py-2 text-text-secondary">
+                      Sin registros todavía.
+                    </li>
+                  )}
+                  {activityLogs.map((entry) => (
                     <li key={entry.id} className="rounded-xl bg-background px-3 py-2">
-                      <p className="font-semibold text-text-primary">{entry.message}</p>
-                      <p>{entry.at}</p>
+                      <p className="font-semibold text-text-primary">{formatActivityMessage(entry)}</p>
+                      <p className="text-[11px] text-text-secondary">{formatActivitySubtitle(entry)}</p>
                     </li>
                   ))}
                 </ul>
