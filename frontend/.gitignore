@@ -25,3 +25,6 @@ dist-ssr
 
 # Evitar husky dentro de subcarpetas
 frontend/.husky/
+
+# Backups locales
+*.backup.json
