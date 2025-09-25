@@ -1,0 +1,21 @@
+﻿* text=auto eol=lf
+
+# Binarios/medios
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+
+# SVG y texto comunes (útil para PRs legibles)
+*.svg  text
+*.ts   text
+*.tsx  text
+*.js   text
+*.jsx  text
+*.css  text
+*.scss text
+*.json text
+*.md   text
+*.yml  text
+*.yaml text
