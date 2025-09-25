@@ -1,8 +1,33 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Board } from '../Board'
 import { resetTablesForTests } from '../../services/tables'
+
+vi.mock('../../components/AuthProvider', async () => {
+  const actual = await vi.importActual<typeof import('../../components/AuthProvider')>(
+    '../../components/AuthProvider',
+  )
+
+  return {
+    ...actual,
+    useAuth: () => ({
+      user: {
+        uid: 'test-user',
+        email: 'test@example.com',
+        displayName: 'Test User',
+      },
+      profile: {
+        alias: 'Test User',
+        fullName: 'Test User',
+      },
+      loading: false,
+      profileLoading: false,
+      authorized: null,
+      signOut: vi.fn(),
+    }),
+  }
+})
 
 describe('Board page', () => {
   beforeEach(() => {

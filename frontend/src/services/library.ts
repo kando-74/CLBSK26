@@ -16,6 +16,7 @@ export type LibraryGameRecord = {
   id: string
   title: string
   owner: string
+  ownerId: string | null
   players: string
   duration: string
   weight: string
@@ -31,6 +32,7 @@ export type LibraryGameInput = {
   id: string
   title: string
   owner: string
+  ownerId: string | null
   players: string
   duration: string
   weight: string
@@ -54,6 +56,7 @@ type StoredGame = LibraryGameRecord
 type FirestoreGame = {
   title: string
   owner: string
+  ownerId?: string | null
   players: string
   duration: string
   weight: string
@@ -79,6 +82,7 @@ const seedGames: StoredGame[] = [
     id: 'seed-heat',
     title: 'Heat: Pedal to the Metal',
     owner: 'Claudia',
+    ownerId: 'seed-organizers',
     players: '2-6',
     duration: '60-90 min',
     weight: '2.3',
@@ -92,6 +96,7 @@ const seedGames: StoredGame[] = [
     id: 'seed-sky-team',
     title: 'Sky Team',
     owner: 'Luis',
+    ownerId: 'seed-organizers',
     players: '2',
     duration: '25 min',
     weight: '2.0',
@@ -105,6 +110,7 @@ const seedGames: StoredGame[] = [
     id: 'seed-kutna-hora',
     title: 'Kutná Hora',
     owner: 'Elena',
+    ownerId: 'seed-organizers',
     players: '2-4',
     duration: '90-120 min',
     weight: '3.6',
@@ -118,6 +124,7 @@ const seedGames: StoredGame[] = [
     id: 'seed-akropolis',
     title: 'Akropolis',
     owner: 'Patricia',
+    ownerId: 'seed-organizers',
     players: '2-4',
     duration: '30 min',
     weight: '1.9',
@@ -156,6 +163,10 @@ function normalizeStoredGame(game: StoredGame): StoredGame {
     id: normalizedId,
     mechanics: Array.isArray(game.mechanics) ? game.mechanics : [],
     createdAt: typeof game.createdAt === 'number' ? game.createdAt : Date.now(),
+    ownerId:
+      typeof (game as { ownerId?: unknown }).ownerId === 'string'
+        ? ((game as { ownerId?: string }).ownerId as string)
+        : null,
   }
 }
 
@@ -194,6 +205,7 @@ function localGameToRecord(game: StoredGame): LibraryGameRecord {
   return {
     ...game,
     mechanics: [...game.mechanics],
+    ownerId: game.ownerId ?? null,
   }
 }
 
@@ -208,6 +220,7 @@ async function seedFirestoreGames(): Promise<void> {
       await setDoc(gameRef, {
         title: game.title,
         owner: game.owner,
+        ownerId: game.ownerId ?? null,
         players: game.players,
         duration: game.duration,
         weight: game.weight,
@@ -228,6 +241,12 @@ function mapFirestoreGame(id: string, data: FirestoreGame): LibraryGameRecord {
     id,
     title: data.title,
     owner: data.owner,
+    ownerId:
+      typeof data.ownerId === 'string'
+        ? data.ownerId
+        : data.ownerId === null
+        ? null
+        : null,
     players: data.players,
     duration: data.duration,
     weight: data.weight,
@@ -321,6 +340,7 @@ async function addGameToFirestore(input: LibraryGameInput): Promise<LibraryActio
       transaction.set(gameRef, {
         title: input.title,
         owner: input.owner,
+        ownerId: input.ownerId ?? null,
         players: input.players,
         duration: input.duration,
         weight: input.weight,
@@ -347,6 +367,7 @@ async function addGameToFirestore(input: LibraryGameInput): Promise<LibraryActio
       id: input.id,
       title: input.title,
       owner: input.owner,
+      ownerId: input.ownerId,
       players: input.players,
       duration: input.duration,
       weight: input.weight,
@@ -391,7 +412,9 @@ async function addGameToFirestore(input: LibraryGameInput): Promise<LibraryActio
 
 async function addGameToLocal(input: LibraryGameInput): Promise<LibraryActionResult> {
   const games = readLocalGames()
-  const duplicate = games.some((game) => game.id === input.id || (input.bggId && game.bggId === input.bggId))
+  const duplicate = games.some(
+    (game) => game.id === input.id || (!!input.bggId && game.bggId === input.bggId),
+  )
 
   if (duplicate) {
     return {
@@ -404,6 +427,7 @@ async function addGameToLocal(input: LibraryGameInput): Promise<LibraryActionRes
     id: input.id,
     title: input.title,
     owner: input.owner,
+    ownerId: input.ownerId,
     players: input.players,
     duration: input.duration,
     weight: input.weight,

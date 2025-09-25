@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   BookmarkCheck,
+  CalendarCheck,
+  ClipboardList,
   Download,
   Filter,
   Globe,
@@ -13,6 +15,9 @@ import type { BggSearchResult } from '../utils/bgg'
 import { getBoardGameDetails, searchBoardGames } from '../utils/bgg'
 import { useNavigate } from 'react-router-dom'
 import { GameTitle } from '../components/GameTitle'
+import { useAuth } from '../components/AuthProvider'
+import { useTablesService } from '../services/tables'
+import { getDisplayName } from '../utils/user'
 import { useLibraryService, type LibraryGameRecord, type LibraryGameInput } from '../services/library'
 
 type BuiltinFilter = {
@@ -78,6 +83,11 @@ const builtinFilters: BuiltinFilter[] = [
 ]
 
 export function Library() {
+  const { user, profile } = useAuth()
+  const userDisplayName = useMemo(() => getDisplayName(profile, user), [profile, user])
+  const userId = user?.uid ?? null
+
+  const { createTable } = useTablesService()
   const { games, loading: libraryLoading, error: libraryError, addGame } = useLibraryService()
   const [search, setSearch] = useState('')
   const [bggQuery, setBggQuery] = useState('')
@@ -94,6 +104,18 @@ export function Library() {
   const [newFilterName, setNewFilterName] = useState('')
   const [filterError, setFilterError] = useState<string | null>(null)
   const [infoMessage, setInfoMessage] = useState<string | null>(null)
+  const [ownerFilter, setOwnerFilter] = useState<string>('all')
+
+  const [showTableModal, setShowTableModal] = useState(false)
+  const [tableDraft, setTableDraft] = useState({
+    game: null as LibraryGameRecord | null,
+    seats: 4,
+    start: '',
+    room: '',
+    description: '',
+  })
+  const [creatingTable, setCreatingTable] = useState(false)
+  const [tableError, setTableError] = useState<string | null>(null)
 
   const importSectionRef = useRef<HTMLDivElement | null>(null)
   const navigate = useNavigate()
@@ -103,8 +125,38 @@ export function Library() {
     [activeFilterId, savedFilters],
   )
 
+  const ownerOptions = useMemo(() => {
+    const map = new Map<string, { value: string; label: string; count: number }>()
+    games.forEach((game) => {
+      const label = game.owner || 'Sin propietario'
+      const value = game.ownerId ? `owner:${game.ownerId}` : `name:${label.toLowerCase()}`
+      const existing = map.get(value)
+      if (existing) {
+        existing.count += 1
+      } else {
+        map.set(value, { value, label, count: 1 })
+      }
+    })
+
+    return Array.from(map.values()).sort((first, second) =>
+      first.label.localeCompare(second.label, 'es', { sensitivity: 'base' }),
+    )
+  }, [games])
+
   const filtered = useMemo(() => {
     let current = games
+
+    if (ownerFilter === 'me') {
+      current = current.filter((game) => (userId ? game.ownerId === userId : false))
+    } else if (ownerFilter.startsWith('owner:')) {
+      const filterId = ownerFilter.slice('owner:'.length)
+      current = current.filter((game) => game.ownerId === filterId)
+    } else if (ownerFilter.startsWith('name:')) {
+      const filterName = ownerFilter.slice('name:'.length)
+      current = current.filter(
+        (game) => game.owner.toLowerCase() === filterName,
+      )
+    }
 
     if (activeFilter) {
       if (activeFilter.type === 'builtin') {
@@ -121,7 +173,7 @@ export function Library() {
     }
 
     return current.filter((item) => matchesSearchTerm(item, term))
-  }, [activeFilter, games, search])
+  }, [activeFilter, games, ownerFilter, search, userId])
 
   useEffect(() => {
     if (!infoMessage) {
@@ -131,6 +183,24 @@ export function Library() {
     const timeout = setTimeout(() => setInfoMessage(null), 4000)
     return () => clearTimeout(timeout)
   }, [infoMessage])
+
+  useEffect(() => {
+    if (ownerFilter === 'me') {
+      if (!userId || !games.some((game) => game.ownerId === userId)) {
+        setOwnerFilter('all')
+      }
+      return
+    }
+
+    if (ownerFilter === 'all') {
+      return
+    }
+
+    const exists = ownerOptions.some((option) => option.value === ownerFilter)
+    if (!exists) {
+      setOwnerFilter('all')
+    }
+  }, [ownerFilter, ownerOptions, userId, games])
 
   useEffect(() => {
     if (activeFilter?.type === 'search') {
@@ -221,7 +291,8 @@ export function Library() {
       const input: LibraryGameInput = {
         id: `bgg-${details.id}`,
         title: details.name,
-        owner: 'Importado',
+        owner: userDisplayName,
+        ownerId: userId,
         players: playersLabel,
         duration: durationLabel,
         weight: weightLabel,
@@ -239,6 +310,7 @@ export function Library() {
         setImportMessage({ type: 'error', message: result.message })
       } else {
         setImportMessage({ type: 'success', message: 'Juego importado correctamente desde BGG.' })
+        setOwnerFilter((current) => (current === 'all' && userId ? 'me' : current))
       }
     } catch (error) {
       setImportMessage({
@@ -323,6 +395,85 @@ export function Library() {
     [navigate],
   )
 
+  const handleOwnerFilterChange = useCallback(
+    (value: string) => {
+      setOwnerFilter(value)
+
+      if (value === 'all') {
+        setInfoMessage('Mostrando juegos de todos los propietarios.')
+        return
+      }
+
+      if (value === 'me') {
+        setInfoMessage('Mostrando tus juegos.')
+        return
+      }
+
+      const option = ownerOptions.find((item) => item.value === value)
+      if (option) {
+        setInfoMessage(`Mostrando juegos de ${option.label}.`)
+      }
+    },
+    [ownerOptions],
+  )
+
+  const handleOpenTable = useCallback(
+    (game: LibraryGameRecord) => {
+      setTableDraft({
+        game,
+        seats: 4,
+        start: '',
+        room: game.language ? `Sala ${game.language}` : '',
+        description: `Proponemos partida para ${game.title}.`,
+      })
+      setTableError(null)
+      setShowTableModal(true)
+    },
+    [],
+  )
+
+  const handleCloseTable = useCallback(() => {
+    setShowTableModal(false)
+    setTableDraft({ game: null, seats: 4, start: '', room: '', description: '' })
+    setTableError(null)
+  }, [])
+
+  const handleSubmitTable = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      if (!tableDraft.game) {
+        return
+      }
+
+      setCreatingTable(true)
+      setTableError(null)
+
+      const safeSeats = Math.max(1, Math.min(8, Math.floor(Number(tableDraft.seats) || 4)))
+      const start = tableDraft.start.trim() || 'Por confirmar'
+      const room = tableDraft.room.trim() || 'Por confirmar'
+      const description = tableDraft.description.trim() || `Proponemos partida para ${tableDraft.game.title}.`
+
+      const result = await createTable({
+        game: tableDraft.game.title,
+        host: userDisplayName,
+        seats: safeSeats,
+        start,
+        room,
+        description,
+      })
+
+      if (result.status === 'success') {
+        setInfoMessage(`Mesa publicada para ${tableDraft.game.title}.`)
+        handleCloseTable()
+      } else {
+        setTableError(result.message)
+      }
+
+      setCreatingTable(false)
+    },
+    [createTable, handleCloseTable, tableDraft, userDisplayName],
+  )
+
   return (
     <div className="space-y-6 pb-10">
       <header className="space-y-4">
@@ -369,11 +520,133 @@ export function Library() {
             </button>
           </div>
         </div>
+        <div className="card flex items-center gap-3 px-4 py-3 text-sm text-text-secondary">
+          <Users className="h-4 w-4" />
+          <select
+            value={ownerFilter}
+            onChange={(event) => handleOwnerFilterChange(event.currentTarget.value)}
+            className="w-full bg-transparent text-sm text-text-primary outline-none"
+          >
+            <option value="all">Todos los propietarios</option>
+            {userId && (
+              <option value="me">Mis juegos</option>
+            )}
+            {ownerOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+                {option.count > 1 ? ` (${option.count})` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
       </header>
 
       {infoMessage && (
         <div className="rounded-2xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm font-medium text-primary">
           {infoMessage}
+        </div>
+      )}
+
+      {showTableModal && tableDraft.game && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+          <div className="w-full max-w-lg space-y-4 rounded-2xl bg-surface p-6 shadow-card">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-text-primary">Proponer mesa</h3>
+                <p className="text-sm text-text-secondary">
+                  Publica una mesa para "{tableDraft.game.title}" directamente desde la ludoteca.
+                </p>
+              </div>
+              <button onClick={handleCloseTable} className="text-sm font-semibold text-primary">
+                Cerrar
+              </button>
+            </div>
+            <form onSubmit={handleSubmitTable} className="space-y-4">
+              <div className="rounded-2xl border border-primary/20 bg-background px-4 py-3">
+                <GameTitle name={tableDraft.game.title} coverUrl={tableDraft.game.coverUrl} size="sm" />
+                <p className="mt-2 text-xs text-text-secondary">
+                  Propietario: {tableDraft.game.owner || 'Sin propietario registrado'}
+                </p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
+                  <span className="text-xs uppercase tracking-wide">Plazas totales</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={8}
+                    value={tableDraft.seats}
+                    onChange={(event) =>
+                      setTableDraft((current) => ({
+                        ...current,
+                        seats: Number(event.currentTarget.value) || 4,
+                      }))
+                    }
+                    className="w-full bg-transparent text-base text-text-primary outline-none"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
+                  <span className="text-xs uppercase tracking-wide">Horario estimado</span>
+                  <input
+                    value={tableDraft.start}
+                    onChange={(event) =>
+                      setTableDraft((current) => ({
+                        ...current,
+                        start: event.currentTarget.value,
+                      }))
+                    }
+                    placeholder="Ej. 19:30"
+                    className="w-full bg-transparent text-base text-text-primary outline-none"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary md:col-span-2">
+                  <span className="text-xs uppercase tracking-wide">Sala o ubicación</span>
+                  <input
+                    value={tableDraft.room}
+                    onChange={(event) =>
+                      setTableDraft((current) => ({
+                        ...current,
+                        room: event.currentTarget.value,
+                      }))
+                    }
+                    placeholder="Sala o ubicación"
+                    className="w-full bg-transparent text-base text-text-primary outline-none"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary md:col-span-2">
+                  <span className="text-xs uppercase tracking-wide">Descripción</span>
+                  <textarea
+                    value={tableDraft.description}
+                    onChange={(event) =>
+                      setTableDraft((current) => ({
+                        ...current,
+                        description: event.currentTarget.value,
+                      }))
+                    }
+                    className="h-24 w-full resize-none bg-transparent text-sm text-text-secondary outline-none"
+                    placeholder="Añade detalles relevantes: nivel, módulos, si explicas reglas..."
+                  />
+                </label>
+              </div>
+              {tableError && <p className="text-sm text-error">{tableError}</p>}
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={handleCloseTable}
+                  className="rounded-full border border-primary/20 px-4 py-2 text-sm font-semibold text-primary"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingTable}
+                  className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/60"
+                >
+                  {creatingTable ? 'Publicando...' : 'Publicar mesa'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
@@ -602,18 +875,28 @@ export function Library() {
                   </span>
                 ))}
               </div>
-              <div className="flex items-center justify-between pt-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => handleOpenTable(game)}
+                  className="inline-flex items-center gap-2 rounded-full border border-primary/40 px-3 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary/10"
+                >
+                  <CalendarCheck className="h-3.5 w-3.5" />
+                  Proponer mesa
+                </button>
                 <button
                   onClick={() => handleRegisterGame(game)}
-                  className="text-sm font-semibold text-primary"
+                  className="inline-flex items-center gap-2 rounded-full border border-primary/40 px-3 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary/10"
                 >
+                  <ClipboardList className="h-3.5 w-3.5" />
                   Registrar partida
                 </button>
-                <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-                  <Users className="h-4 w-4" />
-                  Ideal 4 jugadores
-                </span>
               </div>
+              <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                <Users className="h-4 w-4" />
+                Ideal 4 jugadores
+              </span>
+            </div>
             </article>
           ))}
         </section>

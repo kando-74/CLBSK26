@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { CalendarCheck, Clock, MapPin, Plus } from 'lucide-react'
 import { GameTitle } from '../components/GameTitle'
 import { useTablesService, type TableActionStatus, type TableRecord } from '../services/tables'
+import { useAuth } from '../components/AuthProvider'
+import { getDisplayName } from '../utils/user'
 
 type FilterState = {
   hideFull: boolean
@@ -47,11 +49,16 @@ const FEEDBACK_TONE_STYLES: Record<FeedbackTone, string> = {
 }
 
 export function Board() {
+  const { user, profile } = useAuth()
+  const userDisplayName = useMemo(() => getDisplayName(profile, user), [profile, user])
   const { tables, loading, error, refresh, createTable, joinTable } = useTablesService()
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS)
   const [showFilters, setShowFilters] = useState(false)
   const [showCreateForm, setShowCreateForm] = useState(false)
-  const [newTable, setNewTable] = useState<NewTableState>(INITIAL_NEW_TABLE)
+  const [newTable, setNewTable] = useState<NewTableState>(() => ({
+    ...INITIAL_NEW_TABLE,
+    host: userDisplayName,
+  }))
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null)
   const [pendingJoinId, setPendingJoinId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -71,6 +78,15 @@ export function Board() {
   const filteredTables = useMemo(() => {
     return tables.filter((table) => shouldIncludeTable(table, filters))
   }, [filters, tables])
+
+  useEffect(() => {
+    setNewTable((current) => {
+      if (!current.host || current.host === 'Tú' || current.host === 'Invitado') {
+        return { ...current, host: userDisplayName }
+      }
+      return current
+    })
+  }, [userDisplayName])
 
   useEffect(() => {
     if (!actionFeedback) {
@@ -136,7 +152,7 @@ export function Board() {
     try {
       const result = await createTable({
         game: trimmedGame,
-        host: trimmedHost || 'Tú',
+        host: trimmedHost || userDisplayName,
         seats: totalSeats,
         start: trimmedStart || 'Por confirmar',
         room: trimmedRoom || 'Por confirmar',
@@ -149,7 +165,7 @@ export function Board() {
       })
 
       if (result.status === 'success') {
-        setNewTable(INITIAL_NEW_TABLE)
+        setNewTable({ ...INITIAL_NEW_TABLE, host: userDisplayName })
         setShowCreateForm(false)
       }
     } finally {
