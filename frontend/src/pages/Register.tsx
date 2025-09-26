@@ -93,15 +93,27 @@ export function Register() {
   }, [preselectedGame])
 
   useEffect(() => {
+    let cancelled = false
     const iso = toIsoFromTimeLabel(startTime)
-    const matches = findPotentialDuplicates({
+
+    setDuplicateChecked(false)
+    setDuplicateMatches([])
+
+    void findPotentialDuplicates({
       game: selectedGame,
       players: selectedPlayers,
       startTime: iso,
       thresholdMinutes: 25,
+    }).then((matches) => {
+      if (!cancelled) {
+        setDuplicateMatches(matches)
+        setDuplicateChecked(true)
+      }
     })
-    setDuplicateMatches(matches)
-    setDuplicateChecked(true)
+
+    return () => {
+      cancelled = true
+    }
   }, [selectedGame, selectedPlayers, startTime])
 
   useEffect(() => {
@@ -125,7 +137,7 @@ export function Register() {
 
   const duplicateTimeLabel = mainDuplicate ? formatIsoToTimeLabel(mainDuplicate.play.startTime) : ''
 
-  const handleConfirmRegistration = () => {
+  const handleConfirmRegistration = async () => {
     const trimmedGame = selectedGame.trim()
     if (!trimmedGame || selectedPlayers.length === 0) {
       setSubmissionMessage('Completa juego y jugadores antes de registrar la partida.')
@@ -141,19 +153,24 @@ export function Register() {
       .filter(Boolean)
       .join(' | ')
 
-    registerPlay({
-      game: trimmedGame,
-      players: selectedPlayers,
-      startTime: iso,
-      room,
-      durationMinutes: duration,
-      notes: combinedNotes,
-    })
+    try {
+      await registerPlay({
+        game: trimmedGame,
+        players: selectedPlayers,
+        startTime: iso,
+        room,
+        durationMinutes: duration,
+        notes: combinedNotes,
+      })
 
-    setSubmissionMessage('Partida registrada correctamente. Consulta el resumen en Estadísticas.')
-    setDuplicateMatches([])
-    setDuplicateChecked(false)
-    setStep(0)
+      setSubmissionMessage('Partida registrada correctamente. Consulta el resumen en Estadísticas.')
+      setDuplicateMatches([])
+      setDuplicateChecked(false)
+      setStep(0)
+    } catch (error) {
+      console.error('No se pudo registrar la partida', error)
+      setSubmissionMessage('No se pudo registrar la partida. Revisa la conexión y vuelve a intentarlo.')
+    }
   }
 
   return (

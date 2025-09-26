@@ -3,6 +3,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   orderBy,
   query,
   setDoc,
@@ -117,6 +118,9 @@ const forceLocalPlays = import.meta.env.VITE_FORCE_LOCAL_PLAYS === 'true'
 const isTestEnvironment = import.meta.env.MODE === 'test'
 const useFirestore = !forceLocalPlays && !isTestEnvironment
 const playsCollectionRef = useFirestore ? collection(db, 'boardPlays') : null
+const SEED_PREFIX = 'seed-play-'
+let cachedPlaysMemory: PlayRecord[] | null = null
+let remoteSourceInitialized = false
 
 function resolveStorage(): Storage | null {
   if (typeof window === 'undefined') {
@@ -174,26 +178,93 @@ function normalizeLocalPlay(play: PlayRecord): PlayRecord {
 }
 
 function readLocalPlays(): PlayRecord[] {
+  if (cachedPlaysMemory) {
+    const sanitized = remoteSourceInitialized ? removeSeedPlays(cachedPlaysMemory) : cachedPlaysMemory
+    if (remoteSourceInitialized) {
+      cachedPlaysMemory = sanitized.slice()
+    }
+    return sanitized.slice()
+  }
+
   const storage = resolveStorage()
   if (!storage) {
-    return seedPlays.slice()
+    cachedPlaysMemory = seedPlays.slice()
+    const sanitized = remoteSourceInitialized ? removeSeedPlays(cachedPlaysMemory) : cachedPlaysMemory
+    return sanitized.slice()
   }
 
   const raw = storage.getItem(STORAGE_KEY)
-  const plays = parseStoredPlays(raw)
-  if (!raw) {
+  let plays = parseStoredPlays(raw)
+  if (remoteSourceInitialized) {
+    plays = removeSeedPlays(plays)
+  }
+  if (!raw || remoteSourceInitialized) {
     storage.setItem(STORAGE_KEY, JSON.stringify(plays))
   }
-  return plays
+  cachedPlaysMemory = plays.slice()
+  if (remoteSourceInitialized) {
+    cachedPlaysMemory = removeSeedPlays(cachedPlaysMemory)
+  }
+  return cachedPlaysMemory.slice()
 }
 
 function writeLocalPlays(plays: PlayRecord[]) {
+  const sanitized = remoteSourceInitialized ? removeSeedPlays(plays) : plays
+  cachedPlaysMemory = sanitized.slice()
   const storage = resolveStorage()
   if (!storage) {
     return
   }
 
-  storage.setItem(STORAGE_KEY, JSON.stringify(plays))
+  storage.setItem(STORAGE_KEY, JSON.stringify(sanitized))
+}
+
+function getCachedPlays(): PlayRecord[] {
+  return readLocalPlays()
+}
+
+function upsertCachedPlay(play: PlayRecord): PlayRecord[] {
+  const base = remoteSourceInitialized ? removeSeedPlays(getCachedPlays()) : getCachedPlays()
+  const index = base.findIndex((item) => item.id === play.id)
+  let next: PlayRecord[]
+
+  if (index === -1) {
+    next = [play, ...base]
+  } else {
+    next = base.slice()
+    next[index] = play
+  }
+
+  const sorted = sortByRecordedAt(next)
+  writeLocalPlays(sorted)
+  return sorted
+}
+
+function mergeCachedPlays(plays: PlayRecord[]): PlayRecord[] {
+  const current = remoteSourceInitialized ? removeSeedPlays(getCachedPlays()) : getCachedPlays()
+
+  if (plays.length === 0) {
+    writeLocalPlays(current)
+    return current
+  }
+
+  const byId = new Map<string, PlayRecord>()
+
+  current.forEach((play) => byId.set(play.id, play))
+  plays.forEach((play) => byId.set(play.id, play))
+
+  const merged = sortByRecordedAt(Array.from(byId.values()))
+  const sanitized = remoteSourceInitialized ? removeSeedPlays(merged) : merged
+  writeLocalPlays(sanitized)
+  return sanitized
+}
+
+function removeSeedPlays(plays: PlayRecord[]): PlayRecord[] {
+  return plays.filter((play) => !play.id.startsWith(SEED_PREFIX))
+}
+
+function sortByRecordedAt(plays: PlayRecord[]): PlayRecord[] {
+  return plays.slice().sort((first, second) => second.recordedAt - first.recordedAt)
 }
 
 function sanitizeChronicles(value: PlayChronicles | unknown): PlayChronicles {
@@ -275,31 +346,35 @@ export async function registerPlay(input: RegisterPlayInput): Promise<PlayRecord
     : new Date(start).toISOString()
 
   if (useFirestore && playsCollectionRef) {
-    const playRef = doc(playsCollectionRef)
-  const payload = {
-    tableId: input.tableId ?? null,
-    game: input.game.trim() || 'Partida sin nombre',
-    gameLower: (input.game.trim() || 'Partida sin nombre').toLowerCase(),
-    players: normalizedPlayers,
-    room: input.room.trim() || 'Sala por confirmar',
-      startTime: startIso,
-      durationMinutes:
-        typeof input.durationMinutes === 'number' && Number.isFinite(input.durationMinutes)
-          ? Math.max(5, Math.floor(input.durationMinutes))
-          : null,
-      notes: input.notes?.trim() || null,
-      recordedAt: Date.now(),
-      status: 'in-progress' as PlayStatus,
-      resultSummary: null,
-      chronicles: {},
-      endedAt: null,
-    }
+    try {
+      const playRef = doc(playsCollectionRef)
+      const payload = {
+        tableId: input.tableId ?? null,
+        game: input.game.trim() || 'Partida sin nombre',
+        gameLower: (input.game.trim() || 'Partida sin nombre').toLowerCase(),
+        players: normalizedPlayers,
+        room: input.room.trim() || 'Sala por confirmar',
+        startTime: startIso,
+        durationMinutes:
+          typeof input.durationMinutes === 'number' && Number.isFinite(input.durationMinutes)
+            ? Math.max(5, Math.floor(input.durationMinutes))
+            : null,
+        notes: input.notes?.trim() || null,
+        recordedAt: Date.now(),
+        status: 'in-progress' as PlayStatus,
+        resultSummary: null,
+        chronicles: {},
+        endedAt: null,
+      }
 
-  await setDoc(playRef, payload)
-    const mapped = mapFirestorePlay(playRef.id, payload)
-    const cached = [mapped, ...readLocalPlays()]
-    writeLocalPlays(cached)
-    return mapped
+      await setDoc(playRef, payload)
+      remoteSourceInitialized = true
+      const mapped = mapFirestorePlay(playRef.id, payload)
+      upsertCachedPlay(mapped)
+      return mapped
+    } catch (error) {
+      console.error('No se pudo registrar la partida en Firestore, usando caché local', error)
+    }
   }
 
   const plays = readLocalPlays()
@@ -351,12 +426,8 @@ export async function completePlay(playId: string, input: CompletePlayInput): Pr
       }
 
       const mapped = mapFirestorePlay(snapshot.id, snapshot.data() as Record<string, unknown>)
-      const cached = readLocalPlays()
-      const index = cached.findIndex((play) => play.id === mapped.id)
-      if (index !== -1) {
-        cached[index] = mapped
-      }
-      writeLocalPlays(cached)
+      remoteSourceInitialized = true
+      upsertCachedPlay(mapped)
       return mapped
     } catch (error) {
       console.error('No se pudo cerrar la partida en Firestore', error)
@@ -401,6 +472,9 @@ export async function listPlays(filters: PlaysFilter = {}): Promise<PlayRecord[]
 
       const snapshot = await getDocs(query(playsCollectionRef, ...constraints))
       const plays = snapshot.docs.map((document) => mapFirestorePlay(document.id, document.data() as Record<string, unknown>))
+
+      remoteSourceInitialized = true
+      mergeCachedPlays(plays)
 
       return plays.filter((play) => {
         if (filters.dayStart && Date.parse(play.startTime) < filters.dayStart.getTime()) {
@@ -471,69 +545,104 @@ export type DuplicateMatch = {
   differenceMinutes: number
 }
 
-export function findPotentialDuplicates(query: DuplicateQuery): DuplicateMatch[] {
-  const plays = readLocalPlays()
-  const normalizedPlayers = normalizePlayers(query.players)
-
-  if (!query.game.trim() || normalizedPlayers.length === 0) {
-    return []
-  }
-
-  const targetMinutes = minutesFromIso(query.startTime)
-  const matches: DuplicateMatch[] = []
-  const threshold = typeof query.thresholdMinutes === 'number' ? Math.max(1, query.thresholdMinutes) : 20
-
+function computeDuplicateMatches(
+  source: PlayRecord[],
+  duplicateQuery: DuplicateQuery,
+  normalizedPlayers: string[],
+): DuplicateMatch[] {
+  const threshold =
+    typeof duplicateQuery.thresholdMinutes === 'number' ? Math.max(1, duplicateQuery.thresholdMinutes) : 20
+  const targetMinutes = minutesFromIso(duplicateQuery.startTime)
   const normalizeGame = (value: string) => value.trim().toLowerCase()
-  const targetGame = normalizeGame(query.game)
+  const targetGame = normalizeGame(duplicateQuery.game)
   const targetSet = new Set(normalizedPlayers.map((player) => player.toLowerCase()))
 
-  plays.forEach((play) => {
+  const matches = source.reduce<DuplicateMatch[]>((accumulator, play) => {
     if (normalizeGame(play.game) !== targetGame) {
-      return
+      return accumulator
     }
 
     const candidateMinutes = minutesFromIso(play.startTime)
     if (targetMinutes !== null && candidateMinutes !== null) {
       const difference = Math.abs(targetMinutes - candidateMinutes)
       if (difference > threshold) {
-        return
+        return accumulator
       }
     }
 
     const candidatePlayers = play.players.map((player) => player.toLowerCase())
     const sharedPlayers = candidatePlayers.filter((player) => targetSet.has(player))
     if (sharedPlayers.length === 0) {
-      return
+      return accumulator
     }
 
     const ratio = sharedPlayers.length / Math.max(candidatePlayers.length, targetSet.size)
     if (ratio < 0.6) {
-      return
+      return accumulator
     }
 
-    matches.push({
+    accumulator.push({
       play,
       sharedPlayers: sharedPlayers.length,
       sharedPlayersRatio: ratio,
       differenceMinutes:
         targetMinutes !== null && candidateMinutes !== null ? Math.abs(targetMinutes - candidateMinutes) : Number.NaN,
     })
-  })
+    return accumulator
+  }, [])
 
   return matches.sort((a, b) => a.differenceMinutes - b.differenceMinutes)
 }
 
-export function useDuplicatePlays(query: DuplicateQuery) {
+export async function findPotentialDuplicates(duplicateQuery: DuplicateQuery): Promise<DuplicateMatch[]> {
+  const normalizedPlayers = normalizePlayers(duplicateQuery.players)
+
+  if (!duplicateQuery.game.trim() || normalizedPlayers.length === 0) {
+    return []
+  }
+
+  if (useFirestore && playsCollectionRef) {
+    try {
+      const normalizedGame = duplicateQuery.game.trim().toLowerCase()
+      const constraints = [where('gameLower', '==', normalizedGame), orderBy('recordedAt', 'desc'), limit(40)]
+      const snapshot = await getDocs(query(playsCollectionRef, ...constraints))
+      const remotePlays = snapshot.docs.map((document) =>
+        mapFirestorePlay(document.id, document.data() as Record<string, unknown>),
+      )
+
+      remoteSourceInitialized = true
+      mergeCachedPlays(remotePlays)
+      return computeDuplicateMatches(remotePlays, duplicateQuery, normalizedPlayers)
+    } catch (error) {
+      console.error('No se pudieron buscar duplicados en Firestore, usando caché local', error)
+    }
+  }
+
+  const localPlays = getCachedPlays()
+  return computeDuplicateMatches(localPlays, duplicateQuery, normalizedPlayers)
+}
+
+export function useDuplicatePlays(duplicateQuery: DuplicateQuery) {
   const [matches, setMatches] = useState<DuplicateMatch[]>([])
 
   const refresh = useCallback((nextQuery: DuplicateQuery) => {
-    setMatches(findPotentialDuplicates(nextQuery))
+    void findPotentialDuplicates(nextQuery).then(setMatches)
   }, [])
 
-  const { game, players, startTime, thresholdMinutes } = query
+  const { game, players, startTime, thresholdMinutes } = duplicateQuery
 
   useEffect(() => {
-    setMatches(findPotentialDuplicates({ game, players, startTime, thresholdMinutes }))
+    let cancelled = false
+
+    void findPotentialDuplicates({ game, players, startTime, thresholdMinutes }).then((duplicates) => {
+      if (!cancelled) {
+        setMatches(duplicates)
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
   }, [game, players, startTime, thresholdMinutes])
 
   return { matches, refresh }

@@ -4,13 +4,7 @@ import { ArrowDownToLine, BarChart3, LineChart, Timer, Trophy, Users } from 'luc
 import { clsx } from 'clsx'
 import { getCurrentCongressDay, getDayBoundaries } from '../utils/date'
 import { GameTitle } from '../components/GameTitle'
-import {
-  listPlays,
-  listActivePlays,
-  summarizeRoomOccupancy,
-  type PlayRecord,
-  type RoomOccupancySummary,
-} from '../services/plays'
+import { listPlays, summarizeRoomOccupancy, type PlayRecord, type RoomOccupancySummary } from '../services/plays'
 
 type StatsTab = 'global' | 'personal'
 
@@ -413,7 +407,7 @@ export function Statistics() {
 
       try {
         const playsOfDay = await listPlays({ dayStart, dayEnd })
-        const active = await listActivePlays({ dayStart, dayEnd })
+        const active = playsOfDay.filter((play) => play.status === 'in-progress')
 
         if (cancelled) {
           return
