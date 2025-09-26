@@ -10,6 +10,7 @@ import {
   Timestamp,
   type DocumentData,
   type QuerySnapshot,
+  type FieldValue,
 } from 'firebase/firestore'
 import { db } from '../utils/firebase'
 import { getClientDeviceId } from './activity'
@@ -46,7 +47,7 @@ type FirestoreChatDocument = {
   authorId?: string | null
   deviceId?: string | null
   channel: TableChatChannel
-  createdAt?: Timestamp | number | null
+  createdAt?: Timestamp | number | FieldValue | null
 }
 
 type TableChatState = {
@@ -176,6 +177,8 @@ function mapFirestoreDocuments(tableId: string, snapshot: QuerySnapshot<Document
         createdAt = data.createdAt
       }
 
+      const channel: TableChatChannel = data.channel === 'participants' ? 'participants' : 'public'
+
       return {
         id: doc.id,
         tableId,
@@ -183,7 +186,7 @@ function mapFirestoreDocuments(tableId: string, snapshot: QuerySnapshot<Document
         authorName: data.authorName ?? 'Anónimo',
         authorId: typeof data.authorId === 'string' ? data.authorId : null,
         deviceId: typeof data.deviceId === 'string' ? data.deviceId : null,
-        channel: data.channel === 'participants' ? 'participants' : 'public',
+        channel,
         createdAt,
       }
     })

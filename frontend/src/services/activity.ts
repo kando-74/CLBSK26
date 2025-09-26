@@ -6,6 +6,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  type QueryConstraint,
 } from 'firebase/firestore'
 import type { DocumentData, QueryDocumentSnapshot } from 'firebase/firestore'
 import { auth, db } from '../utils/firebase'
@@ -139,7 +140,7 @@ export function subscribeActivityLogs(
     return () => {}
   }
 
-  const constraints = [orderBy('createdAt', 'desc')]
+  const constraints: QueryConstraint[] = [orderBy('createdAt', 'desc')]
   if (Number.isFinite(limitCount) && limitCount > 0) {
     constraints.push(limit(limitCount))
   }

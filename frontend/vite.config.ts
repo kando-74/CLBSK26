@@ -12,4 +12,4 @@ export default defineConfig({
       reporter: ['text', 'html'],
     },
   },
-})
+} as any)

@@ -327,8 +327,8 @@ export function Organization() {
   })
   const [processingExport, setProcessingExport] = useState<string | null>(null)
   const [selectedAttendee, setSelectedAttendee] = useState<Attendee | null>(null)
-  const [activePlays, setActivePlays] = useState<PlayRecord[]>(() => listActivePlays())
-  const [roomSummary, setRoomSummary] = useState<RoomOccupancySummary>(() => summarizeRoomOccupancy())
+  const [activePlays, setActivePlays] = useState<PlayRecord[]>([])
+  const [roomSummary, setRoomSummary] = useState<RoomOccupancySummary>({})
   const day = getCurrentCongressDay()
 
   const filteredAttendees = useMemo(() => {

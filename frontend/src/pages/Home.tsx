@@ -13,6 +13,7 @@ import {
 import { Link } from 'react-router-dom'
 import { getCurrentCongressDay, formatHour } from '../utils/date'
 import { GameTitle } from '../components/GameTitle'
+import { UserLink } from '../components/UserLink'
 
 const quickActions = [
   {
@@ -206,12 +207,13 @@ export function Home() {
                   <div className="flex flex-wrap gap-2 text-sm text-text-secondary">
                     {play.players.map((player) => (
                       <span key={player} className="rounded-full bg-background px-3 py-1">
-                        {player}
+                        <UserLink name={player} className="text-text-secondary hover:text-primary" />
                       </span>
                     ))}
                   </div>
                   <p className="text-sm text-text-secondary">
-                    <strong className="text-text-primary">Ganó:</strong> {play.winner}
+                    <strong className="text-text-primary">Ganó:</strong>{' '}
+                    <UserLink name={play.winner} className="text-text-secondary hover:text-primary" />
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-2 text-right text-sm text-text-secondary">

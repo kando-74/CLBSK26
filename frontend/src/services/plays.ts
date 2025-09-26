@@ -10,6 +10,7 @@ import {
   setDoc,
   updateDoc,
   where,
+  type QueryConstraint,
 } from 'firebase/firestore'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { db } from '../utils/firebase'
@@ -294,7 +295,7 @@ function applyFilters(plays: PlayRecord[], filters: PlaysFilter = {}): PlayRecor
 }
 
 function buildFirestoreConstraints(filters: PlaysFilter = {}) {
-  const constraints = [orderBy('recordedAt', 'desc')]
+  const constraints: QueryConstraint[] = [orderBy('recordedAt', 'desc')]
 
   if (filters.status && filters.status !== 'all') {
     constraints.push(where('status', '==', filters.status))
@@ -634,7 +635,7 @@ function computeDuplicateMatches(
   return matches.sort((a, b) => a.differenceMinutes - b.differenceMinutes)
 }
 
-function buildDuplicateConstraints(normalizedGame: string) {
+function buildDuplicateConstraints(normalizedGame: string): QueryConstraint[] {
   return [where('gameLower', '==', normalizedGame), orderBy('recordedAt', 'desc'), limit(40)]
 }
 

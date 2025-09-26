@@ -331,7 +331,7 @@ function formatTimeLabelFromDate(date: Date): string {
 function readLocalTables(): StoredTable[] {
   const storage = getStorage()
   if (!storage) {
-    return seedTables.map(cloneTable)
+    return seedTables.map(cloneLocalTable)
   }
 
   const raw = storage.getItem(STORAGE_KEY)
@@ -908,9 +908,7 @@ async function completeTableInFirestore(
   const sanitizedChronicles = sanitizeChroniclesRecord(input.chronicles)
   const resultSummary = input.result.trim()
   const completedAt = Date.now()
-  const endedAtIso = input.endedAt && !Number.isNaN(Date.parse(input.endedAt))
-    ? new Date(input.endedAt).toISOString()
-    : new Date(completedAt).toISOString()
+  const endedAtIso = new Date(completedAt).toISOString()
 
   try {
     const result = await runTransaction<TableActionResult>(db, async (transaction) => {

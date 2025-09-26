@@ -1,4 +1,4 @@
-import { CheckCircle2, FlagCheckered, Megaphone, Play, Sparkles, Trophy, X } from 'lucide-react'
+import { CheckCircle2, Flag, Megaphone, Play, Sparkles, Trophy, X } from 'lucide-react'
 import { useLiveEvents } from './LiveEventsProvider'
 
 const EVENT_META = {
@@ -13,7 +13,7 @@ const EVENT_META = {
     badge: 'bg-secondary/10 text-secondary',
   },
   'table:completed': {
-    icon: FlagCheckered,
+    icon: Flag,
     accent: 'text-emerald-600',
     badge: 'bg-emerald-100 text-emerald-700',
   },
