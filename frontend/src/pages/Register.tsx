@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CalendarClock, ChevronLeft, ChevronRight, Crown } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
-import { findPotentialDuplicates, registerPlay, type DuplicateMatch } from '../services/plays'
+import { registerPlay, useDuplicatePlays } from '../services/plays'
 
 const steps = [
   {
@@ -80,8 +80,6 @@ export function Register() {
   const [room, setRoom] = useState('Sala Azul')
   const [duration, setDuration] = useState(60)
   const [notes, setNotes] = useState('')
-  const [duplicateMatches, setDuplicateMatches] = useState<DuplicateMatch[]>([])
-  const [duplicateChecked, setDuplicateChecked] = useState(false)
   const [submissionMessage, setSubmissionMessage] = useState<string | null>(null)
 
   const progress = useMemo(() => ((step + 1) / steps.length) * 100, [step])
@@ -92,29 +90,17 @@ export function Register() {
     }
   }, [preselectedGame])
 
-  useEffect(() => {
-    let cancelled = false
-    const iso = toIsoFromTimeLabel(startTime)
-
-    setDuplicateChecked(false)
-    setDuplicateMatches([])
-
-    void findPotentialDuplicates({
+  const duplicateQuery = useMemo(
+    () => ({
       game: selectedGame,
       players: selectedPlayers,
-      startTime: iso,
+      startTime: toIsoFromTimeLabel(startTime),
       thresholdMinutes: 25,
-    }).then((matches) => {
-      if (!cancelled) {
-        setDuplicateMatches(matches)
-        setDuplicateChecked(true)
-      }
-    })
+    }),
+    [selectedGame, selectedPlayers, startTime],
+  )
 
-    return () => {
-      cancelled = true
-    }
-  }, [selectedGame, selectedPlayers, startTime])
+  const { matches: duplicateMatches, loading: duplicatesLoading } = useDuplicatePlays(duplicateQuery)
 
   useEffect(() => {
     if (!submissionMessage) {
@@ -164,8 +150,6 @@ export function Register() {
       })
 
       setSubmissionMessage('Partida registrada correctamente. Consulta el resumen en Estadísticas.')
-      setDuplicateMatches([])
-      setDuplicateChecked(false)
       setStep(0)
     } catch (error) {
       console.error('No se pudo registrar la partida', error)
@@ -364,7 +348,7 @@ export function Register() {
                   />
                 </label>
               </div>
-              {duplicateChecked && hasDuplicates && mainDuplicate && (
+              {!duplicatesLoading && hasDuplicates && mainDuplicate && (
                 <div className="space-y-2 rounded-2xl border border-secondary/40 bg-secondary/10 px-4 py-3 text-sm text-secondary">
                   <p className="font-semibold text-text-primary">Posible duplicado detectado</p>
                   <p>

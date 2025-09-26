@@ -4,7 +4,14 @@ import { ArrowDownToLine, BarChart3, LineChart, Timer, Trophy, Users } from 'luc
 import { clsx } from 'clsx'
 import { getCurrentCongressDay, getDayBoundaries } from '../utils/date'
 import { GameTitle } from '../components/GameTitle'
-import { listPlays, summarizeRoomOccupancy, type PlayRecord, type RoomOccupancySummary } from '../services/plays'
+import {
+  isRealtimePlaysEnabled,
+  listPlays,
+  subscribePlays,
+  summarizeRoomOccupancy,
+  type PlayRecord,
+  type RoomOccupancySummary,
+} from '../services/plays'
 
 type StatsTab = 'global' | 'personal'
 
@@ -401,18 +408,49 @@ export function Statistics() {
   useEffect(() => {
     let cancelled = false
 
-    async function loadPlays() {
+    if (isRealtimePlaysEnabled()) {
       setLoading(true)
       setError(null)
 
-      try {
-        const playsOfDay = await listPlays({ dayStart, dayEnd })
-        const active = playsOfDay.filter((play) => play.status === 'in-progress')
+      const unsubscribe = subscribePlays(
+        { dayStart, dayEnd },
+        (playsSnapshot) => {
+          if (cancelled) {
+            return
+          }
 
+          const activeSnapshot = playsSnapshot.filter((play) => play.status === 'in-progress')
+          setPlays(playsSnapshot)
+          setActivePlays(activeSnapshot)
+          setRoomSummary(summarizeRoomOccupancy(activeSnapshot))
+          setLoading(false)
+        },
+        (message) => {
+          if (cancelled) {
+            return
+          }
+          setError(message)
+          setLoading(false)
+        },
+      )
+
+      return () => {
+        cancelled = true
+        unsubscribe()
+      }
+    }
+
+    async function loadPlays() {
+      try {
+        setLoading(true)
+        setError(null)
+
+        const playsOfDay = await listPlays({ dayStart, dayEnd })
         if (cancelled) {
           return
         }
 
+        const active = playsOfDay.filter((play) => play.status === 'in-progress')
         setPlays(playsOfDay)
         setActivePlays(active)
         setRoomSummary(summarizeRoomOccupancy(active))
