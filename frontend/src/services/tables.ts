@@ -462,6 +462,53 @@ function subscribeTablesFromFirestore(
   }
 }
 
+function isRealtimeTablesEnabledInternal(): boolean {
+  return useFirestore && Boolean(tablesCollectionRef)
+}
+
+export function isRealtimeTablesEnabled(): boolean {
+  return isRealtimeTablesEnabledInternal()
+}
+
+export function subscribeTables(
+  onUpdate: (tables: TableRecord[]) => void,
+  onError?: (message: string) => void,
+): () => void {
+  if (isRealtimeTablesEnabledInternal()) {
+    const deviceId = getClientDeviceId()
+    return subscribeTablesFromFirestore(deviceId, onUpdate, onError ?? (() => {}))
+  }
+
+  const emitLocalTables = () => {
+    const snapshot = readLocalTables()
+      .slice()
+      .sort((first, second) => second.createdAt - first.createdAt)
+      .map(localTableToRecord)
+    onUpdate(snapshot)
+  }
+
+  emitLocalTables()
+
+  if (typeof window === 'undefined') {
+    return () => {}
+  }
+
+  const interval = window.setInterval(emitLocalTables, 5000)
+
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === STORAGE_KEY) {
+      emitLocalTables()
+    }
+  }
+
+  window.addEventListener('storage', handleStorage)
+
+  return () => {
+    window.clearInterval(interval)
+    window.removeEventListener('storage', handleStorage)
+  }
+}
+
 async function createTableInFirestore(input: CreateTableInput, deviceId: string): Promise<TableActionResult> {
   if (!tablesCollectionRef) {
     return {

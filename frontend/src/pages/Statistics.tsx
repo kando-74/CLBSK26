@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { ArrowDownToLine, BarChart3, LineChart, Timer, Trophy, Users } from 'lucide-react'
+import { ArrowDownToLine, BarChart3, LineChart, Timer, Trophy, Users, Zap } from 'lucide-react'
 import { clsx } from 'clsx'
 import { getCurrentCongressDay, getDayBoundaries } from '../utils/date'
 import { GameTitle } from '../components/GameTitle'
@@ -12,6 +12,7 @@ import {
   type PlayRecord,
   type RoomOccupancySummary,
 } from '../services/plays'
+import { useLiveEvents } from '../components/LiveEventsProvider'
 
 type StatsTab = 'global' | 'personal'
 
@@ -69,6 +70,11 @@ export function Statistics() {
   const [roomSummary, setRoomSummary] = useState<RoomOccupancySummary>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { latestPlayTimestamp, formatRelativeTime } = useLiveEvents()
+  const liveUpdateLabel = useMemo(
+    () => (latestPlayTimestamp ? formatRelativeTime(latestPlayTimestamp) : null),
+    [formatRelativeTime, latestPlayTimestamp],
+  )
 
   const globalSummary = useMemo(() => {
     const totalPlays = plays.length
@@ -564,6 +570,12 @@ export function Statistics() {
           <p className="mt-2 text-xs uppercase tracking-wide text-text-secondary">
             Resumen para el {day.label}
           </p>
+          {liveUpdateLabel && (
+            <span className="mt-3 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+              <Zap className="h-3 w-3" />
+              Actividad reciente · {liveUpdateLabel}
+            </span>
+          )}
         </div>
         <button
           onClick={handleDownloadCsv}

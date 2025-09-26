@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { CalendarCheck, Clock, MapPin, Plus } from 'lucide-react'
+import { CalendarCheck, Clock, MapPin, Plus, Sparkles } from 'lucide-react'
 import { GameTitle } from '../components/GameTitle'
 import {
   useTablesService,
@@ -12,6 +12,7 @@ import {
 import { useAuth } from '../components/AuthProvider'
 import { getDisplayName } from '../utils/user'
 import { TableChat } from '../components/TableChat'
+import { useLiveEvents } from '../components/LiveEventsProvider'
 
 type FilterState = {
   hideFull: boolean
@@ -390,6 +391,7 @@ export function Board() {
   const { user, profile, localAlias } = useAuth()
   const userDisplayName = useMemo(() => getDisplayName(profile, user, localAlias), [localAlias, profile, user])
   const { tables, loading, error, refresh, createTable, joinTable, startTable, completeTable } = useTablesService()
+  const { getTableHighlight } = useLiveEvents()
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS)
   const [showFilters, setShowFilters] = useState(false)
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -857,8 +859,13 @@ export function Board() {
               ? table.currentPlayers.map((participant) => participant.name).join(', ')
               : table.participants.map((participant) => participant.name).join(', ')
 
+            const tableHighlight = getTableHighlight(table.id)
+            const cardHighlightClass = tableHighlight
+              ? 'ring-2 ring-primary/40 shadow-[0_18px_50px_rgba(99,102,241,0.25)]'
+              : ''
+
             return (
-              <article key={table.id} className="card space-y-4 p-5">
+              <article key={table.id} className={`card space-y-4 p-5 transition-shadow duration-200 ${cardHighlightClass}`}>
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div className="space-y-2">
                     <p className="text-xs uppercase tracking-wide text-text-secondary">Juego</p>
@@ -877,6 +884,12 @@ export function Board() {
                     <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${statusMeta.badgeClass}`}>
                       {statusMeta.label}
                     </span>
+                    {tableHighlight && (
+                      <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                        <Sparkles className="h-3 w-3" />
+                        Actualizado {tableHighlight.label}
+                      </span>
+                    )}
                     <div className="flex items-center gap-3">
                       <span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
                         {Math.max(0, table.seats.total - table.seats.taken)} plazas libres
