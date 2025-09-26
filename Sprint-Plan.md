@@ -57,3 +57,53 @@
 - Decidir entorno de persistencia (mock vs Firestore real) y preparar credenciales si aplica.
 - Reunir feedback de usuarios internos del tablón para ajustar prioridades.
 - Revisar backlog de bugs abiertos relacionados que puedan entrar en el sprint.
+
+---
+
+## Sprint (propuesta) S04 – Perfiles públicos & moderación de fotos
+
+### Información general
+- **Equipo**: Frontend PWA + Functions (2 dev FE, 1 dev BE/infra, 1 QA)
+- **Duración propuesta**: 2 semanas (10 días hábiles)
+- **Objetivo**: Lanzar perfiles públicos moderados que muestren avatar, bio, badges básicos y disponibilidad, con panel de aprobación para staff.
+
+### Alcance y entregables
+1. Permitir edición de perfil personal (alias, bio, visibilidad, disponibilidad) con subida de foto recortada.
+2. Publicar ficha visible para otros asistentes cuando el perfil sea público.
+3. Habilitar panel de moderación de fotos con flujo de aprobación/rechazo y auditoría.
+4. Actualizar reglas de seguridad y pruebas automáticas para garantizar permisos correctos.
+
+### Backlog priorizado
+| ID | Ítem | Objetivo | Criterios de aceptación |
+| --- | --- | --- | --- |
+| PRO-201 | Modelo y Storage de perfiles | Extender datos de usuario, configurar bucket de avatares y queue de moderación. | - Campos `bio`, `profileVisibility`, `photoStatus`, `updatedAt` disponibles.<br>- Avatares se suben a `/avatars/{uid}/...` con URL firmada.<br>- Cloud Function añade entrada en `profileModerationQueue` y genera thumbnail.
+| PRO-202 | Edición de perfil personal | UI para editar datos, recortar foto y gestionar visibilidad. | - Formulario responsive mobile-first con validaciones (bio ≤160 chars).<br>- Recorte 1:1 con preview; subida solo PNG/JPG ≤2 MB.<br>- Feedback de estado de foto (pendiente/aprobada/rechazada) y reinstaurar avatar genérico.
+| PRO-203 | Ficha pública de usuario | Mostrar datos visibles (avatar, alias, bio, badges, stats breves). | - Ficha accesible desde avatar en listas y tablón.<br>- Respetar visibilidad (privado → mensaje y CTA para solicitar acceso).<br>- Badge summary muestra primeras 3 insignias + contador.
+| PRO-204 | Panel de moderación | Vista staff para aprobar/rechazar avatares con trazabilidad. | - Tabla con fotos pendientes, preview grande y acciones rápidas.<br>- Rechazar solicita motivo y notifica al usuario.<br>- Acciones escriben en `profileAuditLog` y cambian `photoStatus`.
+| PRO-205 | Seguridad y QA | Reglas Firestore/Storage, pruebas Playwright y documentación. | - Reglas cubren accesos (solo dueño/staff).<br>- Tests e2e cubren flujo editar → moderar → visualizar.<br>- Docs en README con setup de moderación y flujos de prueba.
+
+### Plan de trabajo (tentativo)
+- **Día 1-2**: PRO-201 (modelo + Storage) y definición de reglas preliminares.
+- **Día 3-4**: PRO-202 (formulario, recorte, carga optimista) con mocks de backend.
+- **Día 5**: PRO-203 (vista pública) y conexión a badges/stats.
+- **Día 6-7**: PRO-204 (panel staff, funciones de aprobación, notificaciones básicas).
+- **Día 8**: PRO-205 (reglas, Playwright, linting, docs).
+- **Día 9**: Buffer para bugs, pruebas cruzadas con QA.
+- **Día 10**: Demo, checklist accesibilidad, retro.
+
+### Dependencias y riesgos
+- Necesario validar si se usará servicio de terceros para detección automática (opcional). Si no, asegurar capacidad de moderadores.
+- Procesamiento de imágenes exige incluir librería (`sharp`) en Functions y aumentar timeout/memoria.
+- Sincronización con módulo de badges: definir API para obtener resumen sin cargas pesadas.
+- Comunicación con usuarios al rechazar foto (notificación push/email) depende de módulo de notificaciones si se implementa en paralelo.
+
+### Métricas de seguimiento
+- Nº de perfiles con foto aprobada vs total activos.
+- Tiempo medio de resolución en cola de moderación.
+- Resultados de pruebas Playwright (nº ejecuciones verdes).
+- Incidentes de acceso incorrecto detectados por QA.
+
+### Definition of Done específica (S04)
+- Cada historia tiene checklist de accesibilidad (focus states, text alternatives).
+- Auditoría de seguridad (Firestore/Storage rules) ejecutada con scripts de prueba.
+- Documentación para moderadores (paso a paso) incluida en Notion/README ops.
