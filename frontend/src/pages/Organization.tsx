@@ -27,6 +27,7 @@ import {
   type ActivityLogRecord,
 } from '../services/activity'
 import { listActivePlays, summarizeRoomOccupancy, type PlayRecord, type RoomOccupancySummary } from '../services/plays'
+import { UserLink } from '../components/UserLink'
 
 type PanelTab = 'attendees' | 'whitelist' | 'duplicates' | 'exports'
 
@@ -366,6 +367,20 @@ export function Organization() {
     () =>
       Object.entries(roomSummary).sort(([, first], [, second]) => second.players - first.players),
     [roomSummary],
+  )
+
+  const renderPlayersInline = useCallback(
+    (names: string[]) =>
+      names
+        .map((name) => name.trim())
+        .filter((name) => name.length > 0)
+        .map((name, index) => (
+          <span key={`${name}-${index}`}>
+            {index > 0 && ', '}
+            <UserLink name={name} />
+          </span>
+        )),
+    [],
   )
 
   useEffect(() => {
@@ -812,7 +827,9 @@ export function Organization() {
                   <article key={attendee.id} className="rounded-2xl border border-slate-200/60 bg-surface p-4">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
-                        <h3 className="text-lg font-semibold text-text-primary">{attendee.alias}</h3>
+                        <h3 className="text-lg font-semibold text-text-primary">
+                          <UserLink name={attendee.alias} className="text-text-primary hover:text-primary/80" />
+                        </h3>
                         <p className="text-sm text-text-secondary">{attendee.email}</p>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -861,7 +878,8 @@ export function Organization() {
                 <article className="rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-text-secondary">
                   <div className="flex items-center justify-between">
                     <h3 className="text-base font-semibold text-text-primary">
-                      Historial rápido de {selectedAttendee.alias}
+                      Historial rápido de{' '}
+                      <UserLink name={selectedAttendee.alias} className="text-text-primary hover:text-primary/80" />
                     </h3>
                     <button
                       onClick={() => setSelectedAttendee(null)}
@@ -952,7 +970,7 @@ export function Organization() {
                       aria-level={3}
                     >
                       <p className="text-sm font-normal text-text-secondary">
-                        {duplicate.players.join(', ')} · Coincidencia {duplicate.similarity}%
+                        {renderPlayersInline(duplicate.players)} · Coincidencia {duplicate.similarity}%
                       </p>
                     </GameTitle>
                     <div className="flex flex-wrap gap-2">

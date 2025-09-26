@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CalendarClock, ChevronLeft, ChevronRight, Crown } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { registerPlay, useDuplicatePlays } from '../services/plays'
+import { UserLink } from '../components/UserLink'
 
 const steps = [
   {
@@ -112,13 +113,25 @@ export function Register() {
 
   const hasDuplicates = duplicateMatches.length > 0
   const mainDuplicate = hasDuplicates ? duplicateMatches[0] : null
+  const renderPlayersInline = useCallback(
+    (players: string[]) =>
+      players
+        .map((player) => player.trim())
+        .filter((player) => player.length > 0)
+        .map((player, index) => (
+          <span key={`${player}-${index}`}>
+            {index > 0 && ', '}
+            <UserLink name={player} />
+          </span>
+        )),
+    [],
+  )
   const duplicateSharedPlayers = useMemo(() => {
     if (!mainDuplicate) {
-      return ''
+      return []
     }
     const target = new Set(selectedPlayers.map((player) => player.toLowerCase()))
-    const shared = mainDuplicate.play.players.filter((player) => target.has(player.toLowerCase()))
-    return shared.join(', ')
+    return mainDuplicate.play.players.filter((player) => target.has(player.toLowerCase()))
   }, [mainDuplicate, selectedPlayers])
 
   const duplicateTimeLabel = mainDuplicate ? formatIsoToTimeLabel(mainDuplicate.play.startTime) : ''
@@ -354,13 +367,16 @@ export function Register() {
                   <p>
                     Existe una partida registrada a las {duplicateTimeLabel}{' '}
                     {formatDifferenceMinutes(mainDuplicate.differenceMinutes)} con{' '}
-                    {duplicateSharedPlayers || 'jugadores similares'}. Revisa los detalles antes de confirmar.
+                    {duplicateSharedPlayers.length > 0
+                      ? renderPlayersInline(duplicateSharedPlayers)
+                      : 'jugadores similares'}
+                    . Revisa los detalles antes de confirmar.
                   </p>
                   <div className="rounded-xl border border-secondary/30 bg-white px-3 py-2 text-xs text-text-secondary">
                     <p className="font-semibold text-text-primary">Último registro</p>
                     <p>
                       {mainDuplicate.play.game} • Sala {mainDuplicate.play.room} •{' '}
-                      {mainDuplicate.play.players.join(', ')}
+                      {renderPlayersInline(mainDuplicate.play.players)}
                     </p>
                   </div>
                 </div>
@@ -390,7 +406,7 @@ export function Register() {
           </div>
           <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
             <p className="text-xs uppercase tracking-wide">Jugadores</p>
-            <p>{selectedPlayers.join(', ')}</p>
+            <p>{renderPlayersInline(selectedPlayers)}</p>
           </div>
           <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
             <p className="text-xs uppercase tracking-wide">Ganador provisional</p>

@@ -12,6 +12,7 @@ import {
 import { useAuth } from '../components/AuthProvider'
 import { getDisplayName } from '../utils/user'
 import { TableChat } from '../components/TableChat'
+import { UserLink } from '../components/UserLink'
 import { useLiveEvents } from '../components/LiveEventsProvider'
 
 type FilterState = {
@@ -84,6 +85,18 @@ type FinishTableDialogProps = {
   pending: boolean
   onConfirm: (payload: CompleteTableInput) => Promise<void>
   onDismiss: () => void
+}
+
+function renderUserList(names: string[]) {
+  return names
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0)
+    .map((name, index) => (
+      <span key={`${name}-${index}`}>
+        {index > 0 && ', '}
+        <UserLink name={name} />
+      </span>
+    ))
 }
 
 function StartTableDialog({ table, pending, onConfirm, onDismiss }: StartTableDialogProps) {
@@ -855,9 +868,10 @@ export function Board() {
 
             const startedLabel = formatTimeFromTimestamp(table.startedAt)
             const completionLabel = formatTimeFromTimestamp(table.completedAt)
-            const currentPlayersLabel = table.currentPlayers.length > 0
-              ? table.currentPlayers.map((participant) => participant.name).join(', ')
-              : table.participants.map((participant) => participant.name).join(', ')
+            const currentPlayersNames = table.currentPlayers.length > 0
+              ? table.currentPlayers.map((participant) => participant.name)
+              : table.participants.map((participant) => participant.name)
+            const currentPlayersNodes = renderUserList(currentPlayersNames)
 
             const tableHighlight = getTableHighlight(table.id)
             const cardHighlightClass = tableHighlight
@@ -877,7 +891,9 @@ export function Board() {
                       role="heading"
                       aria-level={3}
                     >
-                      <p className="text-sm font-normal text-text-secondary">Anfitrión: {table.host}</p>
+                      <p className="text-sm font-normal text-text-secondary">
+                        Anfitrión: <UserLink name={table.host} />
+                      </p>
                     </GameTitle>
                   </div>
                   <div className="flex flex-col items-start justify-end gap-2 md:items-end">
@@ -915,7 +931,7 @@ export function Board() {
                         key={`${table.id}-${participant.deviceId ?? participant.name}`}
                         className="rounded-full bg-background px-3 py-1"
                       >
-                        {participant.name}
+                        <UserLink name={participant.name} className="text-text-secondary hover:text-primary" />
                       </span>
                     ))}
                   </div>
@@ -947,7 +963,9 @@ export function Board() {
                 {table.status === 'in-progress' && (
                   <div className="rounded-2xl border border-secondary/30 bg-secondary/10 px-4 py-3 text-sm text-text-secondary">
                     <p className="font-semibold text-text-primary">Partida en juego</p>
-                    <p>{`Jugadores: ${currentPlayersLabel}`}</p>
+                    <p>
+                      Jugadores: {currentPlayersNodes}
+                    </p>
                     {startedLabel && <p>Inicio: {startedLabel}</p>}
                   </div>
                 )}

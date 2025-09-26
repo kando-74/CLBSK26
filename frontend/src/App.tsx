@@ -8,6 +8,7 @@ import { Profile } from './pages/Profile'
 import { Statistics } from './pages/Statistics'
 import { Access } from './pages/Access'
 import { Organization } from './pages/Organization'
+import { UserProfilePublic } from './pages/UserProfilePublic'
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
           <Route path="/estadisticas" element={<Statistics />} />
           <Route path="/tablon" element={<Board />} />
           <Route path="/perfil" element={<Profile />} />
+          <Route path="/personas/:alias" element={<UserProfilePublic />} />
           <Route path="/organizacion" element={<Organization />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

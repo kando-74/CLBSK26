@@ -7,6 +7,7 @@ import {
   type TableChatMessage,
   useTableChat,
 } from '../services/tableChat'
+import { UserLink } from './UserLink'
 
 type ViewMode = 'all' | 'participants'
 
@@ -114,7 +115,7 @@ function ChatMessageItem({ message }: { message: TableChatMessage }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
           <Users className="h-3.5 w-3.5 text-primary/70" />
-          <span>{message.authorName}</span>
+          <UserLink name={message.authorName} />
         </div>
         <div className="flex items-center gap-2 text-xs text-text-secondary">
           {isPrivate && (
