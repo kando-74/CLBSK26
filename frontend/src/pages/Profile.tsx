@@ -1,9 +1,20 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Languages, Loader2, LogOut, ShieldCheck, UserCog, CheckCircle2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Camera,
+  CheckCircle2,
+  Languages,
+  Loader2,
+  LogOut,
+  ShieldCheck,
+  Trash2,
+  UploadCloud,
+  UserCog,
+} from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { useAuth } from '../components/AuthProvider'
 import { db } from '../utils/firebase'
+import { deleteAvatarFile, uploadAvatarFile, validateAvatarFile } from '../services/profileAvatar'
 
 const SUPPORT_EMAIL = 'soporte@juegoscongreso.com'
 
@@ -28,6 +39,12 @@ export function Profile() {
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [localAliasInput, setLocalAliasInput] = useState(localAlias ?? '')
   const [localAliasMessage, setLocalAliasMessage] = useState<string | null>(null)
+  const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const [avatarError, setAvatarError] = useState<string | null>(null)
+  const [avatarMessage, setAvatarMessage] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     if (!profileLoading && user) {
@@ -60,6 +77,29 @@ export function Profile() {
     }
   }, [localAliasMessage])
 
+  useEffect(() => {
+    if (!avatarFile) {
+      setAvatarPreview(null)
+      return
+    }
+
+    const objectUrl = URL.createObjectURL(avatarFile)
+    setAvatarPreview(objectUrl)
+
+    return () => {
+      URL.revokeObjectURL(objectUrl)
+    }
+  }, [avatarFile])
+
+  useEffect(() => {
+    if (!avatarMessage) {
+      return
+    }
+
+    const timeout = setTimeout(() => setAvatarMessage(null), 4000)
+    return () => clearTimeout(timeout)
+  }, [avatarMessage])
+
   const initials = useMemo(() => {
     if (alias) {
       return alias
@@ -80,6 +120,108 @@ export function Profile() {
   const email = user?.email ?? 'Correo no disponible'
   const roleValue = authorized?.role ?? profile?.role ?? null
   const roleLabel = roleValue ? roleValue.charAt(0).toUpperCase() + roleValue.slice(1) : 'Asistente'
+  const currentAvatarUrl = avatarPreview ?? profile?.avatarUrl ?? user?.photoURL ?? null
+
+  const handleAvatarTrigger = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleAvatarFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) {
+      return
+    }
+
+    const validationError = validateAvatarFile(file)
+    if (validationError) {
+      setAvatarError(validationError)
+      setAvatarFile(null)
+      setAvatarMessage(null)
+      event.target.value = ''
+      return
+    }
+
+    setAvatarFile(file)
+    setAvatarError(null)
+    setAvatarMessage(null)
+    event.target.value = ''
+  }
+
+  const handleAvatarUpload = async () => {
+    if (!user || !avatarFile) {
+      setAvatarError('Selecciona una imagen antes de subirla.')
+      return
+    }
+
+    setAvatarUploading(true)
+    setAvatarError(null)
+    setAvatarMessage(null)
+    const previousPath = profile?.avatarStoragePath ?? null
+
+    try {
+      const result = await uploadAvatarFile(user.uid, avatarFile)
+      await setDoc(
+        doc(db, 'users', user.uid),
+        {
+          avatarUrl: result.downloadUrl,
+          avatarStoragePath: result.path,
+          avatarUpdatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      )
+
+      setAvatarMessage('Foto actualizada correctamente.')
+      setAvatarFile(null)
+
+      if (previousPath && previousPath !== result.path) {
+        await deleteAvatarFile(previousPath).catch(() => undefined)
+      }
+    } catch (error) {
+      setAvatarError(error instanceof Error ? error.message : 'No se pudo subir la imagen.')
+    } finally {
+      setAvatarUploading(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
+  const handleAvatarRemove = async () => {
+    if (!user) {
+      return
+    }
+
+    setAvatarUploading(true)
+    setAvatarError(null)
+    setAvatarMessage(null)
+    const previousPath = profile?.avatarStoragePath ?? null
+
+    try {
+      await setDoc(
+        doc(db, 'users', user.uid),
+        {
+          avatarUrl: null,
+          avatarStoragePath: null,
+          avatarUpdatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      )
+
+      setAvatarFile(null)
+      setAvatarMessage('Foto eliminada. Mostraremos tus iniciales por ahora.')
+
+      if (previousPath) {
+        await deleteAvatarFile(previousPath).catch(() => undefined)
+      }
+    } catch (error) {
+      setAvatarError(error instanceof Error ? error.message : 'No se pudo eliminar la imagen.')
+    } finally {
+      setAvatarUploading(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
 
   const handlePreferenceChange = (key: keyof PreferencesState) => (event: React.ChangeEvent<HTMLInputElement>) => {
     setPreferences((current) => ({ ...current, [key]: event.target.checked }))
@@ -202,18 +344,84 @@ export function Profile() {
 
       <form onSubmit={handleSave} className="grid gap-6 md:grid-cols-[1.5fr,1fr]">
         <div className="card space-y-5 p-6">
-          <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-2xl font-semibold text-primary">
-              {initials}
+          <div className="space-y-3">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-4">
+                <div className="relative h-16 w-16 overflow-hidden rounded-2xl border border-primary/20 bg-primary/5">
+                  {currentAvatarUrl ? (
+                    <img
+                      src={currentAvatarUrl}
+                      alt={`Avatar de ${alias || authorized?.displayName || email}`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center text-2xl font-semibold text-primary">
+                      {initials}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-text-primary">{alias || authorized?.displayName || 'Alias pendiente'}</h3>
+                  <p className="text-sm text-text-secondary">{email}</p>
+                  <span className="mt-1 inline-flex items-center gap-2 rounded-full bg-secondary/20 px-3 py-1 text-xs font-semibold text-secondary">
+                    <ShieldCheck className="h-4 w-4" />
+                    {roleLabel}
+                  </span>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/avif"
+                  className="hidden"
+                  onChange={handleAvatarFileChange}
+                />
+                <button
+                  type="button"
+                  onClick={handleAvatarTrigger}
+                  disabled={avatarUploading}
+                  className="inline-flex items-center gap-2 rounded-full border border-primary/30 px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Camera className="h-4 w-4" />
+                  Seleccionar imagen
+                </button>
+                {avatarFile && (
+                  <button
+                    type="button"
+                    onClick={handleAvatarUpload}
+                    disabled={avatarUploading}
+                    className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/60"
+                  >
+                    {avatarUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                    {avatarUploading ? 'Subiendo...' : 'Guardar foto'}
+                  </button>
+                )}
+                {currentAvatarUrl && !avatarFile && (
+                  <button
+                    type="button"
+                    onClick={handleAvatarRemove}
+                    disabled={avatarUploading}
+                    className="inline-flex items-center gap-2 rounded-full border border-error/30 px-4 py-2 text-sm font-semibold text-error transition-colors hover:bg-error/10 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Quitar foto
+                  </button>
+                )}
+              </div>
             </div>
-            <div>
-              <h3 className="text-lg font-semibold text-text-primary">{alias || authorized?.displayName || 'Alias pendiente'}</h3>
-              <p className="text-sm text-text-secondary">{email}</p>
-              <span className="mt-1 inline-flex items-center gap-2 rounded-full bg-secondary/20 px-3 py-1 text-xs font-semibold text-secondary">
-                <ShieldCheck className="h-4 w-4" />
-                {roleLabel}
-              </span>
-            </div>
+            <p className="text-xs text-text-secondary">
+              Formatos admitidos: JPG, PNG, WEBP o AVIF. Tamaño máximo 2 MB.
+            </p>
+            {avatarFile && (
+              <p className="text-xs text-text-secondary">Previsualiza la imagen arriba antes de confirmar.</p>
+            )}
+            {avatarError && (
+              <p className="rounded-xl border border-error/30 bg-error/5 px-3 py-2 text-sm text-error">{avatarError}</p>
+            )}
+            {avatarMessage && (
+              <p className="rounded-xl border border-success/40 bg-success/10 px-3 py-2 text-sm text-success">{avatarMessage}</p>
+            )}
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">

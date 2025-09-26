@@ -21,6 +21,9 @@ type UserProfile = {
   consentAt?: Date | null
   role?: string
   preferences?: UserPreferences
+  avatarUrl?: string
+  avatarStoragePath?: string
+  avatarUpdatedAt?: Date | null
 }
 
 type AuthorizedEntry = {
@@ -168,6 +171,9 @@ function mapProfile(data: DocumentData): UserProfile {
       darkMode: data.preferences?.darkMode ?? false,
       availableToPlay: data.preferences?.availableToPlay ?? false,
     },
+    avatarUrl: data.avatarUrl ?? undefined,
+    avatarStoragePath: data.avatarStoragePath ?? undefined,
+    avatarUpdatedAt: data.avatarUpdatedAt ? data.avatarUpdatedAt.toDate?.() ?? null : null,
   }
 }
 

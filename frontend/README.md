@@ -42,6 +42,26 @@ La pipeline definida en `../.github/workflows/ci.yml` se ejecuta en cada push a 
 
 Para lanzar la misma verificación localmente, ejecuta en el directorio `frontend` los comandos `npm run lint`, `npm run typecheck` y `npm run test`.
 
+## Avatares y Firebase Storage
+
+- La página de perfil permite subir o eliminar la foto de usuario. Los helpers residen en `src/services/profileAvatar.ts` y guardan las imágenes en `avatars/{uid}/{timestamp}-archivo.ext` dentro del bucket de Firebase Storage.
+- Aceptamos archivos JPG, PNG, WEBP y AVIF de hasta 2 MB. El componente valida el tamaño y muestra una previsualización local antes de confirmar.
+- Asegúrate de habilitar Firebase Storage y, cuando salgas del modo de prueba, aplica reglas que restrinjan el acceso por UID. Una configuración básica sería:
+
+```txt
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /avatars/{userId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
+```
+
+- Firebase actualizará automáticamente los metadatos (`avatarUrl`, `avatarStoragePath`, `avatarUpdatedAt`) en la colección `users`. Si necesitas limpieza adicional (p. ej. thumbnails, moderación), añade Cloud Functions que actúen tras la subida.
+
 ## Estructura relevante
 
 ```
