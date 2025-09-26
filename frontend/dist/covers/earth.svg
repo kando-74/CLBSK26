@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 420">
+  <defs>
+    <linearGradient id="earthGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#11998e" />
+      <stop offset="100%" stop-color="#38ef7d" />
+    </linearGradient>
+  </defs>
+  <rect width="320" height="420" rx="28" fill="url(#earthGradient)" />
+  <g fill="rgba(255,255,255,0.25)">
+    <circle cx="160" cy="160" r="60" />
+    <path d="M120 200c20 30 60 30 80 0s60-30 80 0c-10 70-70 130-160 130-30 0-60-10-80-30 0-50 40-80 80-100z" />
+  </g>
+  <text x="36" y="300" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="48" font-weight="800" fill="white">
+    EARTH
+  </text>
+  <text x="36" y="340" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif" font-size="24" font-weight="600" fill="rgba(255,255,255,0.85)">
+    Cultiva tu bioma
+  </text>
+</svg>
