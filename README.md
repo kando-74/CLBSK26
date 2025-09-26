@@ -19,22 +19,27 @@ App orientada a asistentes de un congreso específico de juegos de mesa. Objetiv
 **MVP (imprescindible)**
 
 * Registro e inicio de sesión de asistentes (lista blanca de emails facilitada por la organización).
-* Ludoteca del evento: alta de juegos por parte de los asistentes; enriquecimiento con metadatos BGG; filtros básicos.
+* Ludoteca del evento: alta de juegos por parte de los asistentes; enriquecimiento con metadatos BGG; filtros básicos y posibilidad de ocultar/eliminar juegos propios.
 * Registro de partidas: juego, jugadores (de la lista de inscritos), hora de inicio, duración, resultado (ganador + opcionalmente posiciones).
 * Detección de posibles duplicados de partida (heurística simple).
 * Panel de **estadísticas globales** y **por usuario** (día del congreso definido 07:00–06:59 del día siguiente).
 
 **V1 (deseable a corto)**
 
-* Tablón “busco mesa” (publicar partidas abiertas, plazas, sala, hora estimada, inscripción).
-* Canal de chat por partida y notificaciones push (FCM).
-* Filtros avanzados en ludoteca (autor, editorial, año, nº jugadores, duración, peso, idioma, propietario).
+* Tablón “busco mesa” (publicar partidas abiertas, plazas, sala, hora estimada, inscripción) con opción de anuncios privados bajo invitación.
+* Canal de chat por partida y notificaciones push contextuales (FCM) para anuncios, inicios de partida y avisos de organización.
+* Fichas públicas de usuario (avatar, bio corta, estadísticas resumidas) con controles de privacidad y moderación de fotos.
+* Gestión operativa de jornadas: renombrar evento, actualizar logo, restablecer ludoteca/sesiones y cargar asistentes vía CSV con roles (participante, admin, colaborador).
+* Meeting point / disponibilidad: flag “busco partida” por tipo de juego y listado filtrable.
+* Filtros avanzados en ludoteca (autor, editorial, año, nº jugadores, duración, peso, idioma, propietario) y registro de dónde se juega cada partida.
 * Exportación CSV/Excel de partidas y estadísticas (para organización).
 
 **V2 (evoluciones)**
 
 * Estadísticas de **grupos** (parejas, tríos) y afinidades (“con quién juego más / gano más / juego más tiempo”).
-* Badges / gamificación (p. ej., “Explorador de novedades”, “Maratón 10h”).
+* Sistema de badges/gamificación escalonado por duración de partidas, tipo de juego, salas visitadas y jugadores distintos.
+* Notificaciones avanzadas: alertas cuando se abre una mesa de tus juegos favoritos, mensajes directos con push/mobile y recordatorios de préstamos.
+* Mesas privadas persistentes, mensajería directa con moderación y disponibilidad configurada por evento.
 * Modo offline (caché local + sincronización) y soportar múltiples eventos/reuniones.
 * Roles de staff/moderación y herramientas antifraude (p. ej., verificación cruzada de partidas).
 
@@ -64,6 +69,12 @@ App orientada a asistentes de un congreso específico de juegos de mesa. Objetiv
 6. *Como organización*, quiero **ver estadísticas globales** (partidas por franja, juegos más jugados, mesas con más uso) para evaluar el éxito del evento.
 7. *Como asistente*, quiero ver un **tablero “busco mesa”** y **apuntarme** con un click para organizarme rápidamente.
 8. *Como asistentes de una partida*, queremos un **chat de partida** para coordinarnos (sala, hora, retrasos).
+9. *Como propietario de juegos*, quiero **retirar temporalmente títulos de mi ludoteca** para reflejar solo lo que llevo al evento.
+10. *Como asistente*, quiero **consultar el perfil de otros jugadores** (avatar, bio, badges básicos) para proponer partidas afines.
+11. *Como organización*, quiero **resetear la jornada** (ludoteca activa, mesas y participantes) y personalizar nombre/logo del evento.
+12. *Como asistente*, quiero **anunciar mi disponibilidad por tipo de juego o duración** para que me contacten fácilmente.
+13. *Como jugador*, quiero **recibir avisos cuando se abra una partida de un juego que sigo** o alguien busque uno que he llevado.
+14. *Como anfitrión de mesa*, quiero **crear partidas privadas** con invitaciones directas para grupos cerrados.
 
 ---
 
@@ -93,16 +104,18 @@ App orientada a asistentes de un congreso específico de juegos de mesa. Objetiv
 * **Enriquecimiento BGG**: título, autores, editorial, año, nº jugadores, duración, “weight”, portada, id BGG, etiquetas/temas/ mecánicas.
 * **Propietario** (usuario que lo lleva) + **cantidad** (si lleva varias copias) + observaciones (idioma del juego, edición, estado componentes).
 * **Filtros**: propietario, nº jugadores, duración, autor, editorial, año, peso, idioma, nombre.
+* Propietarios pueden **ocultar/archivar** temporalmente juegos (p. ej. si ya no lo traen) manteniendo histórico para estadísticas.
 * Durante la Fase 0, el **catálogo inicial** será introducido por la propia organización/asistentes según avancen las pruebas internas.
 
 **Criterios de aceptación**
 
 * Evitar duplicados del **mismo juego/propietario** (mismo id BGG + usuario).
 * Si no se encuentra en BGG, permitir **ficha manual mínima** (nombre + propietario), marcada como “sin validar”.
+* Mantener rastro de juegos archivados para que no cuenten en disponibilidad actual pero sí en métricas históricas.
 
 ### 5.3 Registro de partidas
 
-* Campos: juego (de la ludoteca o BGG), jugadores (de la lista de asistentes), sala (opcional), hora inicio, duración, **ganador** (obligatorio) + **podio** (opcional), notas.
+* Campos: juego (de la ludoteca o BGG), jugadores (de la lista de asistentes), sala (opcional, sugerida), hora inicio, duración, **ganador** (obligatorio) + **podio** (opcional), notas.
 * **Regla de día de congreso**: día = 07:00 a 06:59 del día siguiente (configurable por evento).
 * **Detección de duplicados** (heurística inicial): si se intenta registrar una partida con mismo juego, conjunto de jugadores idéntico o muy similar, y hora de inicio dentro de ±10–15 min de otra ya registrada, avisar y permitir: (a) **confirmar duplicado** (no crear) o (b) **forzar creación** (dejando rastro y alerta a moderación).
 
@@ -111,6 +124,7 @@ App orientada a asistentes de un congreso específico de juegos de mesa. Objetiv
 * Validar que todos los jugadores estén registrados en el evento.
 * Duración ≥ 1 minuto y ≤ 24 h.
 * Un ganador obligatorio (o “empate” marcado explícitamente). Podio opcional.
+* Guardar sala y duración categorizada (filler <30, media 30-60, larga 60-120, épica 120-360, monster 360+) para badges y estadísticas.
 
 ### 5.4 Estadísticas
 
@@ -138,9 +152,11 @@ App orientada a asistentes de un congreso específico de juegos de mesa. Objetiv
 ### 5.5 Tablón “Busco mesa” (V1)
 
 * Crear anuncio: juego (de ludoteca o BGG), sala, **nº de plazas** mín/máx, hora estimada de inicio, notas.
-* Estado del anuncio: **Abierta**, **Completa**, **Cerrada** (manual o por inicio de partida).
+* Opción de **anuncio privado**: visible solo para invitados directos o quienes reciban enlace/código.
+* Estado del anuncio: **Abierta**, **Completa**, **Cerrada** (manual o por inicio de partida), **Privada** (solo invitados).
 * **Inscripción 1 clic** para asistentes; el creador puede **aceptar/expulsar** y marcar **lista de espera**.
 * Conversión de anuncio a **registro de partida** con traspaso de jugadores/horarios.
+* Integración con disponibilidad (Meeting Point): sugerir a anfitrión jugadores que se marcaron como interesados en ese tipo de juego.
 
 ### 5.6 Chat interno (V1)
 
@@ -151,6 +167,54 @@ App orientada a asistentes de un congreso específico de juegos de mesa. Objetiv
 ### 5.7 Panel de organización
 
 * Gestión de asistentes (altas/bajas/roles), exportación de datos (CSV/Excel), indicadores en tiempo real (partidas activas, salas con más actividad), configuración del evento (fechas, regla de día, salas, normas).
+
+### 5.8 Perfiles públicos y avatars
+
+* Cada usuario puede definir **avatar**, foto opcional (selfie o subida manual), bio corta, disponibilidad y redes opcionales.
+* Visibilidad configurable: perfil público para asistentes y opción de ocultar datos sensibles (email, estadísticas detalladas).
+* Moderadores pueden **aprobar/rechazar** fotos y editar avatar en caso de reporte.
+* Mostrar badges conseguidos, estadísticas resumidas y juegos más jugados.
+
+**Criterios de aceptación**
+
+* Perfiles son accesibles desde ludoteca, tablón y chat mediante tap en avatar.
+* Fotos subidas pasan por validación básica (peso, formato) y requieren aprobación cuando se cambian.
+* Usuarios pueden restablecer avatar por defecto en un click.
+
+### 5.9 Meeting point y disponibilidad
+
+* Estado "Estoy disponible" por tipo de juego (filler, media, larga, monster) y por número de jugadores preferido.
+* Listado filtrable por tipo de juego, duración, idioma y sala preferida.
+* Integración con tablón y chat para iniciar conversación rápida.
+
+**Criterios de aceptación**
+
+* Los estados expiran automáticamente al final de la jornada a menos que el usuario los renueve.
+* Permite enviar invitación directa o mensaje rápido a usuarios marcados como disponibles.
+
+### 5.10 Notificaciones y avisos
+
+* Centro de notificaciones in-app con categorías: organización, mis juegos, mis mesas, directos.
+* Suscripciones por juego: recibir alerta cuando alguien abre una partida del juego o pregunta por él.
+* Push web/mobile (FCM) y fallback por email si no se conceden permisos.
+* Canal de anuncios destacado para comunicaciones oficiales del evento.
+
+**Criterios de aceptación**
+
+* Los usuarios pueden gestionar granularmente qué avisos reciben (toggle por categoría).
+* Mensajes directos y anuncios importantes generan notificación push (cuando el usuario acepta permisos).
+* Registro de auditoría para la organización sobre quién envía avisos masivos.
+
+### 5.11 Jornadas y reinicios operativos
+
+* Panel para configurar nombre/logo del evento, fecha/hora de inicio de jornada, salas disponibles y reglas personalizadas.
+* Botón "Reset jornada" que limpia estados temporales (disponibilidad, mesas abiertas, marcadores) manteniendo historial de partidas.
+* Importación de asistentes vía CSV (email, nombre, rol 1=normal, 2=admin, 3=colaborador) con validación y resumen de altas.
+
+**Criterios de aceptación**
+
+* El reset solicita confirmación doble y muestra listado de elementos afectados antes de ejecutar.
+* Los cambios de branding (nombre/logo) se reflejan en PWA y en las notificaciones posteriores.
 
 ---
 
@@ -176,7 +240,7 @@ App orientada a asistentes de un congreso específico de juegos de mesa. Objetiv
 * **Datos**: Firestore (colecciones: usuarios, juegosEvento, partidas, anuncios, chats, eventos, salas, agregadosEstadísticos).
 * **Funciones**: Cloud Functions para: integración BGG (fetch + cache), validación negocio (duplicados), cron/agregados, exportaciones.
 * **Almacenamiento**: Storage para avatares/portadas locales (cuando no haya imagen de BGG).
-* **Notificaciones**: FCM para avisos de chat y cambios de estado de anuncios.
+* **Notificaciones**: FCM para avisos de chat, anuncios, disponibilidad y suscripciones por juego; fallback email vía Cloud Functions.
 * **Seguridad**: Reglas de Firestore por rol; verificación de inputs en Functions; logs de auditoría.
 
 ---
@@ -193,15 +257,15 @@ App orientada a asistentes de un congreso específico de juegos de mesa. Objetiv
 
 **JuegoEvento** (un juego llevado por un usuario)
 
-* id, idBGG, nombre, propietarioUsuarioId, cantidad, idioma, edición, año, autor(es), editorial(es), numJugadoresMin/Max, duraciónMedia, peso, portadaURL, notas.
+* id, idBGG, nombre, propietarioUsuarioId, cantidad, idioma, edición, año, autor(es), editorial(es), numJugadoresMin/Max, duraciónMedia, peso, portadaURL, notas, estado [activo|archivado], ultimaActualizacion.
 
 **Partida**
 
-* id, eventoId, juegoId (o idBGG si no está en ludoteca), jugadoresIds[], horaInicio, duraciónMin, ganadorUsuarioId, podioOrdenadoIds[], sala, notas, estado [abierta|finalizada], huellaDuplicado (hash heurístico), creadoPor.
+* id, eventoId, juegoId (o idBGG si no está en ludoteca), jugadoresIds[], horaInicio, duraciónMin, duraciónCategoria, ganadorUsuarioId, podioOrdenadoIds[], sala, notas, estado [abierta|finalizada], huellaDuplicado (hash heurístico), creadoPor.
 
 **AnuncioMesa** (tablón “busco mesa”)
 
-* id, eventoId, juegoId/idBGG, creadorId, plazasMin, plazasMax, inscritosIds[], sala, horaEstimada, estado [abierta|completa|cerrada], notas.
+* id, eventoId, juegoId/idBGG, creadorId, plazasMin, plazasMax, inscritosIds[], sala, horaEstimada, estado [abierta|completa|cerrada|privada], visibilidad [publica|privada|link], invitadosIds[], codigoAcceso, notas.
 
 **ChatMensaje**
 
@@ -210,6 +274,19 @@ App orientada a asistentes de un congreso específico de juegos de mesa. Objetiv
 **AgregadoEstadístico**
 
 * id, eventoId, tipo [global|usuario|juego|franja], clave (p. ej., fecha, userId), métricas (conteos, duraciones, etc.), ventanaTemporal.
+
+**DisponibilidadUsuario**
+
+* id, usuarioId, eventoId, tiposJuegoPreferidos[], duracionPreferida[], salaObjetivo, activoHasta.
+
+**SuscripcionNotificacion**
+
+* id, usuarioId, juegoId/opcion, tipo [mesaAbre|mensaje|anuncio], canal [push|email], preferencias.
+
+**BadgeDefinition / UserBadge**
+
+* Definition: id, nombre, descripcion, categoria (duracion, ubicacion, social, volumen), umbral, icono.
+* UserBadge: id, usuarioId, badgeId, otorgadoEn, datosContexto (partidaId, sala, contador).
 
 ---
 
