@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { onAuthStateChanged, signOut as firebaseSignOut, type User } from 'firebase/auth'
 import { doc, onSnapshot, type DocumentData } from 'firebase/firestore'
 import { auth, db } from '../utils/firebase'
+import { getLocalAlias, setLocalAlias, subscribeLocalAlias } from '../utils/localIdentity'
 
 type LanguageOption = 'es' | 'en'
 
@@ -20,6 +21,9 @@ type UserProfile = {
   consentAt?: Date | null
   role?: string
   preferences?: UserPreferences
+  avatarUrl?: string
+  avatarStoragePath?: string
+  avatarUpdatedAt?: Date | null
 }
 
 type AuthorizedEntry = {
@@ -35,6 +39,8 @@ type AuthContextValue = {
   profile: UserProfile | null
   profileLoading: boolean
   authorized: AuthorizedEntry | null
+  localAlias: string | null
+  updateLocalAlias: (alias: string) => void
   signOut: () => Promise<void>
 }
 
@@ -46,6 +52,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [profileLoading, setProfileLoading] = useState(true)
   const [authorized, setAuthorized] = useState<AuthorizedEntry | null>(null)
+  const [localAlias, setLocalAliasState] = useState<string | null>(() => getLocalAlias())
+
+  useEffect(() => {
+    const unsubscribe = subscribeLocalAlias((alias) => {
+      setLocalAliasState(alias)
+    })
+
+    return unsubscribe
+  }, [])
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
@@ -71,6 +86,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       (snapshot) => {
         const data = snapshot.data()
         setProfile(data ? mapProfile(data) : null)
+        if (data?.alias) {
+          const normalizedAlias = String(data.alias).trim()
+          if (normalizedAlias) {
+            setLocalAlias(normalizedAlias)
+            setLocalAliasState(normalizedAlias)
+          }
+        }
         setProfileLoading(false)
       },
       () => {
@@ -112,9 +134,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile,
       profileLoading,
       authorized,
+      localAlias,
+      updateLocalAlias: (alias: string) => {
+        const normalized = alias.trim()
+        setLocalAlias(normalized || null)
+        setLocalAliasState(normalized ? normalized : null)
+      },
       signOut: () => firebaseSignOut(auth),
     }),
-    [authorized, loading, profile, profileLoading, user],
+    [authorized, localAlias, loading, profile, profileLoading, user],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
@@ -143,6 +171,9 @@ function mapProfile(data: DocumentData): UserProfile {
       darkMode: data.preferences?.darkMode ?? false,
       availableToPlay: data.preferences?.availableToPlay ?? false,
     },
+    avatarUrl: data.avatarUrl ?? undefined,
+    avatarStoragePath: data.avatarStoragePath ?? undefined,
+    avatarUpdatedAt: data.avatarUpdatedAt ? data.avatarUpdatedAt.toDate?.() ?? null : null,
   }
 }
 

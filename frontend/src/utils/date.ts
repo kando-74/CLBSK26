@@ -20,6 +20,20 @@ export function getCurrentCongressDay(date = new Date()) {
   }
 }
 
+export function getDayBoundaries(reference: Date = new Date()) {
+  const base = new Date(reference)
+  const currentDay = getCurrentCongressDay(base).raw
+
+  const start = new Date(currentDay)
+  start.setHours(DAY_BOUNDARY_HOUR, 0, 0, 0)
+
+  const end = new Date(start)
+  end.setDate(start.getDate() + 1)
+  end.setMilliseconds(end.getMilliseconds() - 1)
+
+  return { start, end }
+}
+
 export function formatHour(date: Date) {
   return new Intl.DateTimeFormat('es-ES', {
     hour: '2-digit',

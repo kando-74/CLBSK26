@@ -1,5 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CalendarClock, ChevronLeft, ChevronRight, Crown } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
+import { registerPlay, useDuplicatePlays } from '../services/plays'
+import { UserLink } from '../components/UserLink'
 
 const steps = [
   {
@@ -22,12 +25,150 @@ const steps = [
 
 const players = ['Ana', 'Luis', 'María', 'Jorge', 'Claudia', 'Inés', 'Raúl']
 
+type RegisterLocationState = {
+  preselectedGame?: string
+}
+
+function toIsoFromTimeLabel(label: string): string {
+  const [hoursRaw, minutesRaw] = label.split(':')
+  const hours = Number.parseInt(hoursRaw ?? '', 10)
+  const minutes = Number.parseInt(minutesRaw ?? '', 10)
+  const now = new Date()
+
+  if (Number.isFinite(hours) && Number.isFinite(minutes)) {
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hours, minutes, 0, 0).toISOString()
+  }
+
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).toISOString()
+}
+
+function formatDifferenceMinutes(value: number): string {
+  if (Number.isNaN(value)) {
+    return 'horario desconocido'
+  }
+
+  if (value === 0) {
+    return 'a la misma hora'
+  }
+
+  if (value < 5) {
+    return `con ${value} min de diferencia`
+  }
+
+  return `a ${value} min de diferencia`
+}
+
+function formatIsoToTimeLabel(iso: string): string {
+  const parsed = Date.parse(iso)
+  if (Number.isNaN(parsed)) {
+    return 'hora desconocida'
+  }
+
+  const date = new Date(parsed)
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${hours}:${minutes}`
+}
+
 export function Register() {
+  const location = useLocation()
+  const preselectedGame = (location.state as RegisterLocationState | null)?.preselectedGame
   const [step, setStep] = useState(0)
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>(['Ana', 'Luis'])
   const [winner, setWinner] = useState('Ana')
+  const [selectedGame, setSelectedGame] = useState(preselectedGame ?? 'Heat: Pedal to the Metal')
+  const [startTime, setStartTime] = useState('16:30')
+  const [room, setRoom] = useState('Sala Azul')
+  const [duration, setDuration] = useState(60)
+  const [notes, setNotes] = useState('')
+  const [submissionMessage, setSubmissionMessage] = useState<string | null>(null)
 
   const progress = useMemo(() => ((step + 1) / steps.length) * 100, [step])
+
+  useEffect(() => {
+    if (preselectedGame) {
+      setSelectedGame(preselectedGame)
+    }
+  }, [preselectedGame])
+
+  const duplicateQuery = useMemo(
+    () => ({
+      game: selectedGame,
+      players: selectedPlayers,
+      startTime: toIsoFromTimeLabel(startTime),
+      thresholdMinutes: 25,
+    }),
+    [selectedGame, selectedPlayers, startTime],
+  )
+
+  const { matches: duplicateMatches, loading: duplicatesLoading } = useDuplicatePlays(duplicateQuery)
+
+  useEffect(() => {
+    if (!submissionMessage) {
+      return
+    }
+    const timeout = setTimeout(() => setSubmissionMessage(null), 4000)
+    return () => clearTimeout(timeout)
+  }, [submissionMessage])
+
+  const hasDuplicates = duplicateMatches.length > 0
+  const mainDuplicate = hasDuplicates ? duplicateMatches[0] : null
+  const renderPlayersInline = useCallback(
+    (players: string[]) =>
+      players
+        .map((player) => player.trim())
+        .filter((player) => player.length > 0)
+        .map((player, index) => (
+          <span key={`${player}-${index}`}>
+            {index > 0 && ', '}
+            <UserLink name={player} />
+          </span>
+        )),
+    [],
+  )
+  const duplicateSharedPlayers = useMemo(() => {
+    if (!mainDuplicate) {
+      return []
+    }
+    const target = new Set(selectedPlayers.map((player) => player.toLowerCase()))
+    return mainDuplicate.play.players.filter((player) => target.has(player.toLowerCase()))
+  }, [mainDuplicate, selectedPlayers])
+
+  const duplicateTimeLabel = mainDuplicate ? formatIsoToTimeLabel(mainDuplicate.play.startTime) : ''
+
+  const handleConfirmRegistration = async () => {
+    const trimmedGame = selectedGame.trim()
+    if (!trimmedGame || selectedPlayers.length === 0) {
+      setSubmissionMessage('Completa juego y jugadores antes de registrar la partida.')
+      return
+    }
+
+    const iso = toIsoFromTimeLabel(startTime)
+    const combinedNotes = [
+      notes.trim(),
+      winner !== 'Empate' ? `Ganador: ${winner}` : 'Resultado: empate',
+      `Jugadores: ${selectedPlayers.join(', ')}`,
+    ]
+      .filter(Boolean)
+      .join(' | ')
+
+    try {
+      await registerPlay({
+        game: trimmedGame,
+        players: selectedPlayers,
+        startTime: iso,
+        room,
+        durationMinutes: duration,
+        notes: combinedNotes,
+      })
+
+      setSubmissionMessage('Partida registrada correctamente. Consulta el resumen en Estadísticas.')
+      setStep(0)
+    } catch (error) {
+      console.error('No se pudo registrar la partida', error)
+      setSubmissionMessage('No se pudo registrar la partida. Revisa la conexión y vuelve a intentarlo.')
+    }
+  }
 
   return (
     <div className="space-y-6 pb-10">
@@ -88,7 +229,9 @@ export function Register() {
                   <span className="text-xs uppercase tracking-wide text-text-secondary">Juego de la ludoteca</span>
                   <input
                     className="mt-1 w-full bg-transparent text-base font-semibold text-text-primary outline-none"
-                    defaultValue="Heat: Pedal to the Metal"
+                    value={selectedGame}
+                    onChange={(event) => setSelectedGame(event.currentTarget.value)}
+                    placeholder="Selecciona un juego"
                   />
                 </label>
                 <label className="rounded-2xl border border-dashed border-primary/40 px-4 py-3">
@@ -100,7 +243,7 @@ export function Register() {
                 </label>
               </div>
               <button className="inline-flex items-center justify-center rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90">
-                Continuar con Heat
+                {selectedGame ? `Continuar con ${selectedGame}` : 'Selecciona un juego'}
               </button>
             </div>
           )}
@@ -146,22 +289,38 @@ export function Register() {
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="rounded-2xl border border-primary/20 px-4 py-3">
                   <span className="text-xs uppercase tracking-wide text-text-secondary">Hora de inicio</span>
-                  <input className="mt-1 w-full bg-transparent text-base text-text-primary outline-none" defaultValue="16:30" />
+                  <input
+                    className="mt-1 w-full bg-transparent text-base text-text-primary outline-none"
+                    value={startTime}
+                    onChange={(event) => setStartTime(event.currentTarget.value)}
+                    type="time"
+                    required
+                  />
                 </label>
                 <label className="rounded-2xl border border-primary/20 px-4 py-3">
                   <span className="text-xs uppercase tracking-wide text-text-secondary">Duración</span>
-                  <select className="mt-1 w-full bg-transparent text-base text-text-primary outline-none">
-                    <option>60 minutos</option>
-                    <option>75 minutos</option>
-                    <option>90 minutos</option>
+                  <select
+                    className="mt-1 w-full bg-transparent text-base text-text-primary outline-none"
+                    value={duration}
+                    onChange={(event) => setDuration(Number(event.currentTarget.value))}
+                  >
+                    <option value={45}>45 minutos</option>
+                    <option value={60}>60 minutos</option>
+                    <option value={75}>75 minutos</option>
+                    <option value={90}>90 minutos</option>
                   </select>
                 </label>
                 <label className="rounded-2xl border border-primary/20 px-4 py-3">
                   <span className="text-xs uppercase tracking-wide text-text-secondary">Sala</span>
-                  <select className="mt-1 w-full bg-transparent text-base text-text-primary outline-none">
-                    <option>Sala Azul</option>
-                    <option>Sala Amarilla</option>
-                    <option>Lobby principal</option>
+                  <select
+                    className="mt-1 w-full bg-transparent text-base text-text-primary outline-none"
+                    value={room}
+                    onChange={(event) => setRoom(event.currentTarget.value)}
+                  >
+                    <option value="Sala Azul">Sala Azul</option>
+                    <option value="Sala Amarilla">Sala Amarilla</option>
+                    <option value="Lobby principal">Lobby principal</option>
+                    <option value="Sala Verde">Sala Verde</option>
                   </select>
                 </label>
                 <label className="rounded-2xl border border-dashed border-primary/30 px-4 py-3">
@@ -169,6 +328,8 @@ export function Register() {
                   <textarea
                     className="mt-1 h-20 w-full resize-none bg-transparent text-sm text-text-secondary outline-none"
                     placeholder="Añade recordatorios para la mesa"
+                    value={notes}
+                    onChange={(event) => setNotes(event.currentTarget.value)}
                   />
                 </label>
               </div>
@@ -200,13 +361,36 @@ export function Register() {
                   />
                 </label>
               </div>
-              <div className="rounded-2xl border border-secondary/40 bg-secondary/10 px-4 py-3 text-sm text-secondary">
-                <p className="font-semibold text-text-primary">Posible duplicado detectado</p>
-                <p>
-                  Existe una partida registrada hace 12 minutos con los mismos jugadores. Revisa los detalles antes de confirmar.
-                </p>
-              </div>
-              <button className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90">
+              {!duplicatesLoading && hasDuplicates && mainDuplicate && (
+                <div className="space-y-2 rounded-2xl border border-secondary/40 bg-secondary/10 px-4 py-3 text-sm text-secondary">
+                  <p className="font-semibold text-text-primary">Posible duplicado detectado</p>
+                  <p>
+                    Existe una partida registrada a las {duplicateTimeLabel}{' '}
+                    {formatDifferenceMinutes(mainDuplicate.differenceMinutes)} con{' '}
+                    {duplicateSharedPlayers.length > 0
+                      ? renderPlayersInline(duplicateSharedPlayers)
+                      : 'jugadores similares'}
+                    . Revisa los detalles antes de confirmar.
+                  </p>
+                  <div className="rounded-xl border border-secondary/30 bg-white px-3 py-2 text-xs text-text-secondary">
+                    <p className="font-semibold text-text-primary">Último registro</p>
+                    <p>
+                      {mainDuplicate.play.game} • Sala {mainDuplicate.play.room} •{' '}
+                      {renderPlayersInline(mainDuplicate.play.players)}
+                    </p>
+                  </div>
+                </div>
+              )}
+              {submissionMessage && (
+                <div className="rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-primary">
+                  {submissionMessage}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={handleConfirmRegistration}
+                className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
+              >
                 Confirmar registro
               </button>
             </div>
@@ -217,12 +401,12 @@ export function Register() {
           <h3 className="text-lg font-semibold text-text-primary">Resumen</h3>
           <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
             <p className="text-xs uppercase tracking-wide">Juego</p>
-            <p className="text-base font-semibold text-text-primary">Heat: Pedal to the Metal</p>
-            <p>Propietario: Claudia</p>
+            <p className="text-base font-semibold text-text-primary">{selectedGame || 'Pendiente de seleccionar'}</p>
+            <p>{selectedPlayers.length} jugadores previstos</p>
           </div>
           <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
             <p className="text-xs uppercase tracking-wide">Jugadores</p>
-            <p>{selectedPlayers.join(', ')}</p>
+            <p>{renderPlayersInline(selectedPlayers)}</p>
           </div>
           <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
             <p className="text-xs uppercase tracking-wide">Ganador provisional</p>
@@ -232,8 +416,11 @@ export function Register() {
             </p>
           </div>
           <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
-            <p className="text-xs uppercase tracking-wide">Duración</p>
-            <p>60 minutos estimados</p>
+            <p className="text-xs uppercase tracking-wide">Hora y duración</p>
+            <p>
+              {startTime} • {duration} min
+            </p>
+            <p>Sala: {room}</p>
           </div>
           <div className="flex items-center justify-between pt-2">
             <button

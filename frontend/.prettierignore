@@ -1,0 +1,9 @@
+﻿# Ignorar artefactos y deps
+dist/
+node_modules/
+
+# Archivos generados
+*.log
+
+# Opcional: ignora los covers svg si no quieres que los toque
+public/covers/

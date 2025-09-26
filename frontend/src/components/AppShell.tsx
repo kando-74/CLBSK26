@@ -8,6 +8,7 @@ import {
   PlusCircle,
   UserCircle2,
 } from 'lucide-react'
+import { LiveEventToasts } from './LiveEventToasts'
 
 const navItems = [
   { label: 'Home', to: '/', icon: HomeIcon },
@@ -22,6 +23,7 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-background text-text-primary">
+      <LiveEventToasts />
       <div className="mx-auto flex min-h-screen max-w-screen-xl flex-col">
         <header className="sticky top-0 z-30 hidden bg-background/80 backdrop-blur md:block">
           <div className="flex items-center justify-between border-b border-slate-200 px-8 py-5">

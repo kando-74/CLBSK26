@@ -118,3 +118,38 @@ React Query    Custom Claims (rol)
 3. Detallar especificaciones UI (wireframes) y definir design tokens iniciales.
 4. Elaborar backlog en herramienta de gestión (Jira/Linear) mapeando épicas/tareas anteriores con estimaciones iniciales.
 5. Preparar dataset de juegos de ejemplo y usuarios para pruebas de Sprint 1–3.
+
+## 7. Extensión V1 – Perfiles públicos & medios
+
+### 7.1 Objetivo
+- Habilitar fichas públicas de asistentes con foto moderada, bio corta, badges y estadísticas resumidas para reforzar la coordinación de partidas y sentar las bases de notificaciones personalizadas.
+- Permitir que moderadores revisen/editen avatares y que usuarios controlen su visibilidad (público/privado) y preferencia de contacto.
+
+### 7.2 Alcance funcional (historias)
+1. Como asistente, quiero editar mi perfil (alias, bio, foto, disponibilidad) y decidir si es visible para otros.
+2. Como asistente, quiero consultar el perfil de otra persona para ver avatar, badges y juegos frecuentes antes de proponer una partida.
+3. Como moderador, quiero aprobar o rechazar fotos subidas para evitar contenido inapropiado.
+4. Como organización, quiero acceso a un log de cambios en perfiles para auditar modificaciones y reportes.
+
+### 7.3 Backlog técnico propuesto
+- **P1.1 Modelo de datos**: extender `users` con `profileVisibility`, `bio`, `photoStatus`, `badgesSummary`, `updatedAt`; crear colección `profileModerationQueue` y `profileAuditLog`.
+- **P1.2 Storage & funciones**: configurar bucket dedicado para avatares (`/avatars/{uid}/{timestamp}`), generar versiones optimizadas (256x256), validar peso/formato; Cloud Function `onFinalize` que inserte elemento en cola de moderación.
+- **P1.3 Flujos de edición**: pantalla "Mi perfil" con formulario (alias, bio 160 caracteres, disponibilidad, enlaces opcionales); carga de foto con recorte 1:1 y previsualización.
+- **P1.4 Fichas públicas**: vista accesible desde avatar (modal o página) con datos permitidos, badges, estadísticas highlight; respetar `profileVisibility == public`.
+- **P1.5 Moderación**: panel staff con tabla de fotos pendientes, botón aprobar/rechazar, comentario y set automático de `photoStatus`; acción para restaurar avatar genérico.
+- **P1.6 Integración badges**: consumir `userBadges` (o resumen) para mostrar conteo, primeras insignias y enlace a catálogo; fallback cuando no existan badges.
+- **P1.7 Auditoría**: Cloud Function callable `logProfileChange` que centraliza escrituras sensibles y crea entrada en `profileAuditLog` con actor, campo y timestamp.
+- **P1.8 Reglas de seguridad**: actualizar reglas Firestore/Storage para permitir a usuarios subir a su carpeta, restringir lectura de `profileModerationQueue` a staff, exponer solo alias/avatar/badges en lecturas públicas.
+- **P1.9 QA y accesibilidad**: pruebas e2e (Playwright) para flujo completo (editar perfil, subir foto, moderador aprueba, perfil visible); validaciones AA (focus, announce ARIA) y fallback cuando foto está pendiente.
+
+### 7.4 Dependencias y riesgos
+- Requiere `Storage` habilitado y configuración de tokens FCM para avisos de moderación (opcional pero recomendado).
+- Necesita definición clara de roles (`staff`, `organizer`) en custom claims antes de exponer panel de moderación.
+- Riesgo de sobrecarga manual: contemplar auto‑aprobación basada en comprobaciones básicas + posibilidad de lotes.
+- Considerar límites de cuota Storage/Functions por procesamiento de imágenes; usar `sharp` o similar en función backend.
+
+### 7.5 Métricas y verificación
+- % de usuarios con perfil público y foto aprobada (>70% objetivo tras evento piloto).
+- Tiempo medio desde subida de foto hasta aprobación (<30 min durante evento activo).
+- Nº de reportes o rechazos (vigilar <5% para detectar abusos).
+- Test de aceptación: checklist con “perfil editable”, “ficha visible según permisos”, “moderación registra auditoría” y “reglas bloquean accesos indebidos”.

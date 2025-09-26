@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { clsx } from 'clsx'
 import {
   BarChart3,
@@ -11,8 +12,12 @@ import {
   Users,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { getCurrentCongressDay, formatHour } from '../utils/date'
+import { getCurrentCongressDay, getDayBoundaries, formatHour } from '../utils/date'
 import { GameTitle } from '../components/GameTitle'
+import { UserLink } from '../components/UserLink'
+import { subscribePlays, type PlayRecord } from '../services/plays'
+import { subscribeTables, type TableRecord } from '../services/tables'
+import { isActivityLoggingEnabled, subscribeActivityLogs, type ActivityLogRecord } from '../services/activity'
 
 const quickActions = [
   {
@@ -45,83 +50,264 @@ const quickActions = [
   },
 ]
 
-const statsHighlights = [
-  {
-    label: 'Partidas hoy',
-    value: '18',
-    trend: '+4 vs ayer',
-    icon: Sparkles,
-    badge: 'Hoy',
-  },
-  {
-    label: 'Tiempo de juego',
-    value: '26 h',
-    trend: '↑ +12%',
-    icon: Clock4,
-    badge: 'Acumulado',
-  },
-  {
-    label: 'Jugadores activos',
-    value: '42',
-    trend: '78% asistentes',
-    icon: Users,
-    badge: 'Conectados',
-  },
-]
+const activityDateFormatter = new Intl.DateTimeFormat('es-ES', {
+  dateStyle: 'short',
+  timeStyle: 'short',
+})
 
-const recentPlays = [
-  {
-    id: 1,
-    game: 'Heat: Pedal to the Metal',
-    players: ['Ana', 'Luis', 'María', 'Jorge'],
-    duration: '75 min',
-    winner: 'Ana',
-    start: new Date().setMinutes(new Date().getMinutes() - 25),
-  },
-  {
-    id: 2,
-    game: 'Bohnanza',
-    players: ['Pablo', 'Irene', 'Claudia'],
-    duration: '45 min',
-    winner: 'Claudia',
-    start: new Date().setMinutes(new Date().getMinutes() - 50),
-  },
-  {
-    id: 3,
-    game: 'Dune: Imperium',
-    players: ['Raúl', 'Inés', 'Hugo', 'Elena'],
-    duration: '110 min',
-    winner: 'Hugo',
-    start: new Date().setMinutes(new Date().getMinutes() - 130),
-  },
-]
+type LoadingState = {
+  plays: boolean
+  tables: boolean
+  announcements: boolean
+}
 
-const announcements = [
-  {
-    id: 1,
-    title: 'Cena comunitaria a las 20:30',
-    message: 'Nos vemos en la sala multiusos. Trae tu acreditación.',
-  },
-  {
-    id: 2,
-    title: 'Entrega premios prototipos',
-    message: 'Domingo 12:00 en el auditorio. ¡No te lo pierdas!',
-  },
-]
+function formatMinutesLabel(totalMinutes: number): string {
+  if (!Number.isFinite(totalMinutes) || totalMinutes <= 0) {
+    return '—'
+  }
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  if (hours === 0) {
+    return `${minutes} min`
+  }
+  if (minutes === 0) {
+    return `${hours} h`
+  }
+  return `${hours} h ${minutes} min`
+}
+
+function renderPlayersInline(players: string[]): ReactNode {
+  const normalized = players.map((player) => player.trim()).filter((player) => player.length > 0)
+  return normalized.map((player, index) => (
+    <span key={`${player}-${index}`}>
+      {index > 0 && ', '}
+      <UserLink name={player} />
+    </span>
+  ))
+}
+
+function formatActivityMessage(entry: ActivityLogRecord) {
+  if (entry.message) {
+    return entry.message
+  }
+
+  switch (entry.type) {
+    case 'table:create':
+      return `Nueva mesa publicada: ${entry.entityName}`
+    case 'table:join':
+      return `Reserva en la mesa ${entry.entityName}`
+    case 'library:add':
+      return `Juego añadido a la ludoteca: ${entry.entityName}`
+    default:
+      return entry.entityName
+  }
+}
+
+function formatActivitySubtitle(entry: ActivityLogRecord) {
+  const actorName = entry.actor?.displayName ?? entry.actor?.email ?? 'Sistema'
+  const timestamp = entry.createdAt ? activityDateFormatter.format(entry.createdAt) : 'Sincronizando…'
+  const device = entry.deviceId ? ` · ${entry.deviceId}` : ''
+  return `${actorName} · ${timestamp}${device}`
+}
+
+function getPlayDurationLabel(play: PlayRecord): string {
+  if (play.status === 'in-progress') {
+    return 'En juego'
+  }
+  if (Number.isFinite(play.durationMinutes) && (play.durationMinutes ?? 0) > 0) {
+    return formatMinutesLabel(play.durationMinutes ?? 0)
+  }
+  return 'Duración por confirmar'
+}
+
+function getPlayStartLabel(play: PlayRecord): string {
+  const parsed = Date.parse(play.startTime)
+  if (Number.isNaN(parsed)) {
+    return 'Horario en revisión'
+  }
+  return formatHour(new Date(parsed))
+}
 
 export function Home() {
   const day = getCurrentCongressDay()
+  const [plays, setPlays] = useState<PlayRecord[]>([])
+  const [tables, setTables] = useState<TableRecord[]>([])
+  const [activityLogs, setActivityLogs] = useState<ActivityLogRecord[]>([])
+  const [loading, setLoading] = useState<LoadingState>({
+    plays: true,
+    tables: true,
+    announcements: isActivityLoggingEnabled,
+  })
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    const { start, end } = getDayBoundaries()
+
+    const unsubscribePlays = subscribePlays(
+      { dayStart: start, dayEnd: end },
+      (next) => {
+        setPlays(next)
+        setLoading((current) => ({ ...current, plays: false }))
+      },
+      (message) => {
+        if (message) {
+          setStatusMessage(message)
+        }
+        setLoading((current) => ({ ...current, plays: false }))
+      },
+    )
+
+    const unsubscribeTables = subscribeTables(
+      (next) => {
+        setTables(next)
+        setLoading((current) => ({ ...current, tables: false }))
+      },
+      (message) => {
+        if (message) {
+          setStatusMessage(message)
+        }
+        setLoading((current) => ({ ...current, tables: false }))
+      },
+    )
+
+    let unsubscribeActivity = () => {}
+    if (isActivityLoggingEnabled) {
+      unsubscribeActivity = subscribeActivityLogs(
+        6,
+        (logs) => {
+          setActivityLogs(logs)
+          setLoading((current) => ({ ...current, announcements: false }))
+        },
+        (message) => {
+          if (message) {
+            setStatusMessage(message)
+          }
+          setLoading((current) => ({ ...current, announcements: false }))
+        },
+      )
+    } else {
+      setLoading((current) => ({ ...current, announcements: false }))
+    }
+
+    return () => {
+      unsubscribePlays()
+      unsubscribeTables()
+      unsubscribeActivity()
+    }
+  }, [])
+
+  const activePlays = useMemo(
+    () => plays.filter((play) => play.status === 'in-progress'),
+    [plays],
+  )
+
+  const completedPlays = useMemo(
+    () => plays.filter((play) => play.status === 'completed'),
+    [plays],
+  )
+
+  const livePlays = useMemo(() => activePlays.slice(0, 4), [activePlays])
+
+  const uniquePlayers = useMemo(() => {
+    const set = new Set<string>()
+    plays.forEach((play) => {
+      play.players.forEach((player) => {
+        const trimmed = player.trim()
+        if (trimmed) {
+          set.add(trimmed.toLowerCase())
+        }
+      })
+    })
+    return set.size
+  }, [plays])
+
+  const totalMinutes = useMemo(
+    () => plays.reduce((accumulator, play) => accumulator + (play.durationMinutes ?? 0), 0),
+    [plays],
+  )
+
+  const openTables = useMemo(
+    () =>
+      tables
+        .filter((table) => table.status === 'open')
+        .sort((first, second) => (second.createdAt ?? 0) - (first.createdAt ?? 0))
+        .slice(0, 4),
+    [tables],
+  )
+
+  const tablesInProgress = useMemo(
+    () =>
+      tables
+        .filter((table) => table.status === 'in-progress')
+        .sort((first, second) => (second.startedAt ?? 0) - (first.startedAt ?? 0))
+        .slice(0, 4),
+    [tables],
+  )
+
+  const recentPlays = useMemo(() => {
+    return plays
+      .slice()
+      .sort((first, second) => Date.parse(second.startTime) - Date.parse(first.startTime))
+      .slice(0, 5)
+  }, [plays])
+
+  const statsHighlights = useMemo(
+    () => [
+      {
+        label: 'Partidas registradas',
+        value: String(plays.length),
+        trend: `${completedPlays.length} finalizadas hoy`,
+        icon: Trophy,
+        badge: 'Hoy',
+      },
+      {
+        label: 'Partidas en curso',
+        value: String(activePlays.length),
+        trend: `${openTables.length} mesa(s) buscando personas`,
+        icon: Sparkles,
+        badge: 'En vivo',
+      },
+      {
+        label: 'Participantes únicos',
+        value: String(uniquePlayers),
+        trend: totalMinutes > 0 ? `${formatMinutesLabel(totalMinutes)} acumulados` : 'Duración pendiente',
+        icon: Users,
+        badge: 'Personas',
+      },
+    ],
+    [activePlays.length, completedPlays.length, openTables.length, plays.length, totalMinutes, uniquePlayers],
+  )
+
+  const announcements = useMemo(() => {
+    if (activityLogs.length === 0) {
+      return [
+        {
+          id: 'placeholder',
+          title: 'Sin anuncios por ahora',
+          message: 'La organización publicará avisos en este espacio en cuanto estén disponibles.',
+        },
+      ]
+    }
+
+    return activityLogs.slice(0, 3).map((entry) => ({
+      id: entry.id,
+      title: formatActivityMessage(entry),
+      message: formatActivitySubtitle(entry),
+    }))
+  }, [activityLogs])
+
+  const isLoading = loading.plays || loading.tables
 
   return (
     <div className="space-y-8 pb-10">
       <section className="card relative overflow-hidden bg-gradient-to-r from-primary to-emerald-600 text-white">
         <div className="absolute inset-y-0 right-0 hidden w-1/3 bg-[radial-gradient(circle_at_top,_rgba(255,180,0,0.35),_transparent_70%)] md:block" />
         <div className="relative flex flex-col gap-6 p-6 md:flex-row md:items-center md:justify-between md:p-10">
-          <div>
+          <div className="max-w-xl">
             <p className="text-sm font-medium uppercase tracking-wide text-white/80">Día del congreso</p>
             <h2 className="mt-1 text-3xl font-semibold capitalize md:text-4xl">{day.label}</h2>
-            <p className="mt-3 max-w-xl text-base text-white/80">
-              Consulta de un vistazo las partidas de hoy, las mesas abiertas y los próximos anuncios de la organización.
+            <p className="mt-3 text-base text-white/80">
+              Consulta en vivo las partidas registradas hoy, las mesas abiertas y los últimos avisos de la organización.
             </p>
             <Link
               to="/estadisticas"
@@ -131,7 +317,7 @@ export function Home() {
               Abrir panel de estadísticas
             </Link>
           </div>
-          <div className="grid grid-cols-3 gap-3 md:gap-6">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 md:gap-6">
             {statsHighlights.map((item) => (
               <div
                 key={item.label}
@@ -149,6 +335,12 @@ export function Home() {
           </div>
         </div>
       </section>
+
+      {statusMessage ? (
+        <div className="card border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          {statusMessage}
+        </div>
+      ) : null}
 
       <section className="space-y-4">
         <div className="flex items-center justify-between">
@@ -176,54 +368,120 @@ export function Home() {
               <p className="text-sm text-text-secondary">{action.description}</p>
               <span className="mt-auto inline-flex items-center gap-2 text-sm font-semibold text-primary">
                 Ir ahora
-                <Share2 className="h-4 w-4" />
+                <Share2 className="h-4 w-4 transition-transform group-hover:translate-x-1" />
               </span>
             </Link>
           ))}
         </div>
       </section>
 
-      <section className="grid gap-6 md:grid-cols-[2fr,1fr]">
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="section-title">Actividad reciente</h2>
-            <span className="flex items-center gap-2 text-sm text-text-secondary">
-              <CalendarDays className="h-4 w-4" />
-              {day.label}
-            </span>
-          </div>
-          <div className="space-y-3">
-            {recentPlays.map((play) => (
-              <article key={play.id} className="card flex items-start justify-between gap-4 p-5">
-                <div className="space-y-2">
-                  <GameTitle
-                    name={play.game}
-                    size="sm"
-                    textClassName="text-lg"
-                    role="heading"
-                    aria-level={3}
-                  />
-                  <div className="flex flex-wrap gap-2 text-sm text-text-secondary">
-                    {play.players.map((player) => (
-                      <span key={player} className="rounded-full bg-background px-3 py-1">
-                        {player}
+      <section className="grid gap-6 xl:grid-cols-[2fr,1fr]">
+        <div className="space-y-6">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="section-title">Actividad reciente</h2>
+              <span className="flex items-center gap-2 text-sm text-text-secondary">
+                <CalendarDays className="h-4 w-4" />
+                {day.label}
+              </span>
+            </div>
+            {isLoading && recentPlays.length === 0 ? (
+              <div className="card p-5 text-sm text-text-secondary">Sincronizando partidas del día…</div>
+            ) : null}
+            {recentPlays.length > 0 ? (
+              <div className="space-y-3">
+                {recentPlays.map((play) => (
+                  <article key={play.id} className="card flex flex-col gap-4 p-5 sm:flex-row sm:justify-between">
+                    <div className="space-y-2">
+                      <GameTitle
+                        name={play.game}
+                        size="sm"
+                        textClassName="text-lg"
+                        role="heading"
+                        aria-level={3}
+                      />
+                      <p className="text-sm text-text-secondary">
+                        <span className="font-semibold text-text-primary">Jugadores:</span>{' '}
+                        {renderPlayersInline(play.players)}
+                      </p>
+                      <p className="text-sm text-text-secondary">
+                        <span className="font-semibold text-text-primary">Sala:</span> {play.room || 'Por confirmar'}
+                      </p>
+                      {play.resultSummary ? (
+                        <p className="text-sm text-text-secondary">
+                          <span className="font-semibold text-text-primary">Resultado:</span> {play.resultSummary}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-col items-end gap-2 text-right text-sm text-text-secondary">
+                      <span className="rounded-full bg-secondary/20 px-3 py-1 text-xs font-semibold text-secondary">
+                        {getPlayStartLabel(play)}
                       </span>
-                    ))}
-                  </div>
-                  <p className="text-sm text-text-secondary">
-                    <strong className="text-text-primary">Ganó:</strong> {play.winner}
-                  </p>
-                </div>
-                <div className="flex flex-col items-end gap-2 text-right text-sm text-text-secondary">
-                  <span className="rounded-full bg-secondary/20 px-3 py-1 text-xs font-semibold text-secondary">
-                    {formatHour(new Date(play.start))}
-                  </span>
-                  <span>{play.duration}</span>
-                </div>
-              </article>
-            ))}
+                      <span>{getPlayDurationLabel(play)}</span>
+                      <span
+                        className={clsx(
+                          'rounded-full px-3 py-1 text-xs font-semibold',
+                          play.status === 'in-progress'
+                            ? 'bg-primary/10 text-primary'
+                            : 'bg-emerald-100 text-emerald-800',
+                        )}
+                      >
+                        {play.status === 'in-progress' ? 'En curso' : 'Finalizada'}
+                      </span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+            {!isLoading && recentPlays.length === 0 ? (
+              <div className="card p-5 text-sm text-text-secondary">
+                Aún no se han registrado partidas para hoy. ¡Anímate a estrenar la jornada!
+              </div>
+            ) : null}
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="section-title">Partidas en curso</h2>
+              <span className="flex items-center gap-2 text-sm text-text-secondary">
+                <Clock4 className="h-4 w-4" />
+                {activePlays.length} activas
+              </span>
+            </div>
+            {isLoading && livePlays.length === 0 ? (
+              <div className="card p-5 text-sm text-text-secondary">Cargando partidas en curso…</div>
+            ) : null}
+            {livePlays.length > 0 ? (
+              <div className="space-y-3">
+                {livePlays.map((play) => (
+                  <article key={play.id} className="rounded-2xl border border-primary/15 bg-primary/5 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <GameTitle
+                        name={play.game}
+                        size="xs"
+                        textClassName="text-base font-semibold text-primary"
+                        role="heading"
+                        aria-level={3}
+                      />
+                      <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                        Desde {getPlayStartLabel(play)}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm text-text-secondary">{renderPlayersInline(play.players)}</p>
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-text-secondary">
+                      <span>{play.room || 'Sala por confirmar'}</span>
+                      <span>{getPlayDurationLabel(play)}</span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+            {!isLoading && livePlays.length === 0 ? (
+              <div className="card p-5 text-sm text-text-secondary">No hay partidas en curso en este momento.</div>
+            ) : null}
           </div>
         </div>
+
         <aside className="space-y-4">
           <div className="card space-y-3 p-5">
             <h3 className="text-lg font-semibold text-text-primary">Anuncios de la organización</h3>
@@ -236,13 +494,90 @@ export function Home() {
               ))}
             </div>
           </div>
+
           <div className="card space-y-3 p-5">
-            <h3 className="text-lg font-semibold text-text-primary">Consejos rápidos</h3>
-            <ul className="space-y-2 text-sm text-text-secondary">
-              <li>• Marca tus juegos favoritos para encontrarlos en segundos.</li>
-              <li>• Configura alertas push para no perderte nuevas mesas.</li>
-              <li>• Comparte el enlace de tu partida con un toque.</li>
-            </ul>
+            <h3 className="text-lg font-semibold text-text-primary">Mesas abiertas</h3>
+            {loading.tables && openTables.length === 0 ? (
+              <p className="text-sm text-text-secondary">Sincronizando mesas…</p>
+            ) : null}
+            {openTables.length > 0 ? (
+              <div className="space-y-3">
+                {openTables.map((table) => {
+                  const availableSeats = Math.max(table.seats.total - table.seats.taken, 0)
+                  const participants = (table.participants ?? []).map((participant) => participant.name)
+
+                  return (
+                    <article key={table.id} className="rounded-2xl bg-background/80 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <GameTitle name={table.game} size="xs" textClassName="text-base" />
+                        <span
+                          className={clsx(
+                            'rounded-full px-3 py-1 text-xs font-semibold',
+                            availableSeats > 0
+                              ? 'bg-secondary/20 text-secondary'
+                              : 'bg-emerald-100 text-emerald-800',
+                          )}
+                        >
+                          {availableSeats > 0 ? `${availableSeats} plaza(s) libre(s)` : 'Completa'}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm text-text-secondary">
+                        <span className="font-semibold text-text-primary">Anfitrión:</span>{' '}
+                        <UserLink name={table.host} className="text-text-secondary hover:text-primary" />
+                      </p>
+                      <p className="text-sm text-text-secondary">
+                        <span className="font-semibold text-text-primary">Sala:</span> {table.room || 'Por confirmar'} ·{' '}
+                        <span className="font-semibold text-text-primary">Inicio:</span> {table.start || 'Próximamente'}
+                      </p>
+                      <p className="text-xs text-text-secondary">
+                        {table.seats.taken}/{table.seats.total} personas anotadas
+                      </p>
+                      {participants.length > 0 ? (
+                        <p className="mt-1 text-xs text-text-secondary">{renderPlayersInline(participants)}</p>
+                      ) : null}
+                    </article>
+                  )
+                })}
+              </div>
+            ) : null}
+            {!loading.tables && openTables.length === 0 ? (
+              <p className="text-sm text-text-secondary">No hay mesas abiertas ahora mismo. Vuelve en unos minutos.</p>
+            ) : null}
+          </div>
+
+          <div className="card space-y-3 p-5">
+            <h3 className="text-lg font-semibold text-text-primary">Mesas en juego</h3>
+            {loading.tables && tablesInProgress.length === 0 ? (
+              <p className="text-sm text-text-secondary">Recuperando estado de las mesas…</p>
+            ) : null}
+            {tablesInProgress.length > 0 ? (
+              <div className="space-y-3">
+                {tablesInProgress.map((table) => {
+                  const players = (table.currentPlayers ?? table.participants ?? []).map((participant) => participant.name)
+                  const startedAtLabel = table.startedAt ? formatHour(new Date(table.startedAt)) : 'En curso'
+
+                  return (
+                    <article key={table.id} className="rounded-2xl bg-primary/5 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <GameTitle name={table.game} size="xs" textClassName="text-base font-semibold text-primary" />
+                        <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                          Desde {startedAtLabel}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm text-text-secondary">
+                        <span className="font-semibold text-text-primary">Sala:</span> {table.room || 'Por confirmar'}
+                      </p>
+                      {players.length > 0 ? (
+                        <p className="text-xs text-text-secondary">{renderPlayersInline(players)}</p>
+                      ) : null}
+                    </article>
+                  )
+                })}
+              </div>
+            ) : null}
+            {!loading.tables && tablesInProgress.length === 0 ? (
+              <p className="text-sm text-text-secondary">No hay mesas activas en este momento.</p>
+            ) : null}
           </div>
         </aside>
       </section>
