@@ -21,6 +21,8 @@ import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } f
 import { getFunctions, httpsCallable } from 'firebase/functions'
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
 import type { FirebaseError } from 'firebase/app'
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
+import type { DocumentData, FirebaseError } from 'firebase/firestore'
 import { auth, db } from '../utils/firebase'
 import { useAuth } from '../components/AuthProvider'
 
@@ -51,6 +53,12 @@ type StepKey = (typeof onboardingSteps)[number]['key']
 type LanguageOption = 'es' | 'en'
 
 type VerificationStatus = 'idle' | 'checking' | 'success' | 'error'
+
+type AuthorizedEntry = {
+  email: string
+  role?: string
+  displayName?: string
+}
 
 const SUPPORT_EMAIL = 'soporte@juegoscongreso.com'
 
@@ -109,14 +117,24 @@ export function Access() {
         const checkWhitelist = httpsCallable(functions, 'checkWhitelist')
         const result = (await checkWhitelist({ email: normalizedEmail })) as {
           data: { isAuthorized: boolean; role?: string }
+        if (!canSubmitLogin) {
+          throw new Error('Revisa el correo y la contraseña antes de continuar.')
         }
 
         if (!result.data.isAuthorized) {
+        const whitelistRef = doc(db, 'authorizedEmails', normalizedEmail)
+        const whitelistSnap = await getDoc(whitelistRef)
+
+        if (!whitelistSnap.exists()) {
           throw new Error('Tu correo no forma parte de la whitelist habilitada para el evento.')
         }
 
+        const whitelistData = whitelistSnap.data()
+        const entry = mapAuthorizedEntry(normalizedEmail, whitelistData)
+
         if (!cancelled) {
           setAuthorizedEntry({ email: normalizedEmail, role: result.data.role })
+          setAuthorizedEntry(entry)
         }
 
         // 2. Si está autorizado, intentar el login o crear el usuario
@@ -142,7 +160,23 @@ export function Access() {
           throw new Error('No se pudo establecer tu sesión. Intenta de nuevo en unos segundos.')
         }
 
+        const profileRef = doc(db, 'users', currentUser.uid)
+        const profileSnap = await getDoc(profileRef)
+
         if (!cancelled) {
+          if (profileSnap.exists()) {
+            const data = profileSnap.data()
+            setAlias((prev) => prev || data.alias || entry.displayName || normalizedEmail.split('@')[0])
+            setFullName(data.fullName ?? '')
+            setLanguage((data.language as LanguageOption | undefined) ?? 'es')
+            setConsent(Boolean(data.consentAt))
+          } else {
+            setAlias((prev) => prev || entry.displayName || normalizedEmail.split('@')[0])
+            setFullName('')
+            setConsent(false)
+          }
+
+          setProfilePrefilled(false)
           setVerificationStatus('success')
           setCurrentStep('profile')
         }
@@ -150,6 +184,7 @@ export function Access() {
         if (cancelled) {
           return
         }
+
         setVerificationStatus('error')
         setVerificationError(error instanceof Error ? error.message : 'No se pudo validar tu acceso. Intenta nuevamente.')
         if (auth.currentUser && auth.currentUser.email?.toLowerCase() !== normalizedEmail) {
