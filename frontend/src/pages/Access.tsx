@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent, JSX } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { clsx } from 'clsx'
+import { type AuthError as FirebaseAuthError } from 'firebase/auth'
 import {
   ArrowLeft,
   ArrowRight,
@@ -14,7 +15,7 @@ import {
   UserRound,
 } from 'lucide-react'
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth'
-import { doc, getDoc, serverTimestamp, setDoc, type DocumentData } from 'firebase/firestore'
+import { doc, getDoc, serverTimestamp, setDoc, type DocumentData, type FirestoreError } from 'firebase/firestore'
 import type { FirestoreError } from 'firebase/firestore'
 import { auth, db } from '../utils/firebase'
 import { useAuth } from '../components/AuthProvider'
@@ -72,6 +73,7 @@ export function Access() {
   const [verificationError, setVerificationError] = useState<string | null>(null)
   const [profileSaved, setProfileSaved] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [authorizedEntry, setAuthorizedEntry] = useState<AuthorizedEntry | null>(null)
   const [profilePrefilled, setProfilePrefilled] = useState(false)
 
@@ -589,7 +591,7 @@ type AuthError = {
 
 function mapAuthError(error: unknown): AuthError {
   if (typeof error === 'object' && error && 'code' in error && 'message' in error) {
-    const firebaseError = error as FirestoreError
+    const firebaseError = error as FirebaseAuthError
     switch (firebaseError.code) {
       case 'auth/invalid-email':
         return { code: firebaseError.code, message: 'El formato de correo no es válido.' }
