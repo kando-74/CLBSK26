@@ -59,7 +59,7 @@ export function AddGameForm({ eventId = 'main-event' }: { eventId?: string }) {
     }
   }
 
-  async function handleImport(bggId: number) {
+  async function handleImport(bggId: number, yearPublished?: number) {
     addGameMutation.reset()
     try {
       // Obtenemos detalles completos para tener la mejor info posible
@@ -71,7 +71,7 @@ export function AddGameForm({ eventId = 'main-event' }: { eventId?: string }) {
         bggData: {
           name: details.name,
           thumbnail: details.thumbnailUrl ?? details.imageUrl,
-          yearPublished: details.yearPublished ?? undefined,
+          yearPublished: yearPublished ?? undefined,
         },
       })
     } catch (error) {
@@ -146,7 +146,7 @@ export function AddGameForm({ eventId = 'main-event' }: { eventId?: string }) {
                   </p>
                 </div>
                 <button
-                  onClick={() => handleImport(result.id)}
+                  onClick={() => handleImport(result.id, result.yearPublished)}
                   disabled={isImportingThis || addGameMutation.isSuccess}
                   className="btn-secondary inline-flex items-center justify-center gap-2 text-xs"
                 >
