@@ -194,7 +194,10 @@ export function Register() {
             </span>
           </div>
           <div className="mt-3 h-2 rounded-full bg-background">
-            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+            <div
+              className="h-full w-[var(--progress-width)] rounded-full bg-primary transition-all"
+              style={{ '--progress-width': `${progress}%` } as React.CSSProperties}
+            />
           </div>
         </div>
         <div className="grid gap-4 md:grid-cols-4">

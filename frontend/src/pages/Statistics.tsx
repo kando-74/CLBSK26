@@ -669,10 +669,10 @@ export function Statistics() {
                 <div className="flex items-end gap-3" aria-hidden="true">
                   {hourlyDistribution.map((slot) => (
                     <div key={slot.hour} className="flex flex-1 flex-col items-center gap-2 text-xs text-text-secondary">
-                      <div className="flex h-32 w-full items-end justify-center rounded-full bg-primary/10">
+                      <div className="flex h-32 w-full items-end justify-center rounded-t-full bg-primary/10">
                         <div
-                          className="w-3 rounded-full bg-primary"
-                          style={{ height: `${(slot.value / maxHourValue) * 100}%` }}
+                          className="h-[var(--bar-height)] w-3 rounded-t-full bg-primary"
+                          style={{ '--bar-height': `calc(${(slot.value / maxHourValue) * 100}%)` } as React.CSSProperties}
                         />
                       </div>
                       <span className="font-semibold text-text-primary">{slot.value}</span>
@@ -781,8 +781,8 @@ export function Statistics() {
                         </div>
                         <div className="h-2 rounded-full bg-primary/10">
                           <div
-                            className="h-full rounded-full bg-primary"
-                            style={{ width: `${(item.plays / maxPersonalPlays) * 100}%` }}
+                            className="h-full w-[var(--bar-width)] rounded-full bg-primary"
+                            style={{ '--bar-width': `${(item.plays / maxPersonalPlays) * 100}%` } as React.CSSProperties}
                           />
                         </div>
                       </div>
@@ -836,8 +836,8 @@ export function Statistics() {
                   </div>
                   <div className="h-2 rounded-full bg-primary/10">
                     <div
-                      className="h-full rounded-full bg-primary"
-                      style={{ width: `${achievement.progress * 100}%` }}
+                      className="h-full w-[var(--bar-width)] rounded-full bg-primary"
+                      style={{ '--bar-width': `${achievement.progress * 100}%` } as React.CSSProperties}
                     />
                   </div>
                 </div>

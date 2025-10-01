@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent, JSX } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { clsx } from 'clsx'
+import { type AuthError as FirebaseAuthError } from 'firebase/auth'
 import {
   ArrowLeft,
   ArrowRight,
@@ -14,9 +15,7 @@ import {
   UserRound,
 } from 'lucide-react'
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth'
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
-import type { DocumentData } from 'firebase/firestore'
-import type { FirebaseError } from 'firebase/app'
+import { doc, getDoc, serverTimestamp, setDoc, type DocumentData } from 'firebase/firestore'
 import { auth, db } from '../utils/firebase'
 import { useAuth } from '../components/AuthProvider'
 
@@ -72,8 +71,8 @@ export function Access() {
   const [verificationAttempt, setVerificationAttempt] = useState(0)
   const [verificationError, setVerificationError] = useState<string | null>(null)
   const [profileSaved, setProfileSaved] = useState(false)
-  const [profileError, setProfileError] = useState<string | null>(null)
   const [savingProfile, setSavingProfile] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [authorizedEntry, setAuthorizedEntry] = useState<AuthorizedEntry | null>(null)
   const [profilePrefilled, setProfilePrefilled] = useState(false)
 
@@ -125,6 +124,7 @@ export function Access() {
           setAuthorizedEntry(entry)
         }
 
+        // 2. Si está autorizado, intentar el login o crear el usuario
         let currentUser = auth.currentUser
         const isDifferentUser = currentUser?.email?.toLowerCase() !== normalizedEmail
 
@@ -262,7 +262,7 @@ export function Access() {
     }
 
     setSavingProfile(true)
-    setProfileError(null)
+    setSaveError(null)
 
     try {
       const profileRef = doc(db, 'users', auth.currentUser.uid)
@@ -283,7 +283,7 @@ export function Access() {
       setProfileSaved(true)
       navigate('/')
     } catch (error) {
-      setProfileError(error instanceof Error ? error.message : 'No se pudo guardar el perfil. Vuelve a intentarlo más tarde.')
+      setSaveError(error instanceof Error ? error.message : 'No se pudo guardar el perfil. Vuelve a intentarlo más tarde.')
     } finally {
       setSavingProfile(false)
     }
@@ -492,8 +492,8 @@ export function Access() {
               </div>
             </label>
           </div>
-          {profileError && (
-            <p className="rounded-xl border border-error/30 bg-error/5 px-3 py-2 text-sm text-error">{profileError}</p>
+          {saveError && (
+            <p className="rounded-xl border border-error/30 bg-error/5 px-3 py-2 text-sm text-error">{saveError}</p>
           )}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <button
@@ -548,7 +548,10 @@ export function Access() {
           </div>
           <div className="rounded-full bg-background shadow-card">
             <div className="relative h-2 overflow-hidden rounded-full bg-slate-200">
-              <div className="absolute inset-y-0 left-0 bg-primary transition-all" style={{ width: `${progress}%` }} />
+              <div
+                className="absolute inset-y-0 left-0 w-[var(--progress-width)] bg-primary transition-all"
+                style={{ '--progress-width': `${progress}%` } as React.CSSProperties}
+              />
             </div>
             <div className="mt-3 flex items-center justify-between text-xs font-semibold text-text-secondary">
               {onboardingSteps.map((step, index) => (
@@ -590,7 +593,7 @@ type AuthError = {
 
 function mapAuthError(error: unknown): AuthError {
   if (typeof error === 'object' && error && 'code' in error && 'message' in error) {
-    const firebaseError = error as FirebaseError
+    const firebaseError = error as FirebaseAuthError
     switch (firebaseError.code) {
       case 'auth/invalid-email':
         return { code: firebaseError.code, message: 'El formato de correo no es válido.' }
