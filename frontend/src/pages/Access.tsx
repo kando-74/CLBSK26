@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent, JSX } from 'react'
-<<<<<<< ours
 import { Link, useNavigate } from 'react-router-dom'
-=======
-import { Link } from 'react-router-dom'
->>>>>>> theirs
 import { clsx } from 'clsx'
 import {
   ArrowLeft,
@@ -18,11 +14,8 @@ import {
   UserRound,
 } from 'lucide-react'
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth'
-import { getFunctions, httpsCallable } from 'firebase/functions'
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
-import type { FirebaseError } from 'firebase/app'
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
-import type { DocumentData, FirebaseError } from 'firebase/firestore'
+import { doc, getDoc, serverTimestamp, setDoc, type DocumentData } from 'firebase/firestore'
+import type { FirestoreError } from 'firebase/firestore'
 import { auth, db } from '../utils/firebase'
 import { useAuth } from '../components/AuthProvider'
 
@@ -112,16 +105,10 @@ export function Access() {
       setVerificationError(null)
 
       try {
-        // 1. Llamar a la Cloud Function para verificar la whitelist
-        const functions = getFunctions()
-        const checkWhitelist = httpsCallable(functions, 'checkWhitelist')
-        const result = (await checkWhitelist({ email: normalizedEmail })) as {
-          data: { isAuthorized: boolean; role?: string }
         if (!canSubmitLogin) {
           throw new Error('Revisa el correo y la contraseña antes de continuar.')
         }
 
-        if (!result.data.isAuthorized) {
         const whitelistRef = doc(db, 'authorizedEmails', normalizedEmail)
         const whitelistSnap = await getDoc(whitelistRef)
 
@@ -133,7 +120,6 @@ export function Access() {
         const entry = mapAuthorizedEntry(normalizedEmail, whitelistData)
 
         if (!cancelled) {
-          setAuthorizedEntry({ email: normalizedEmail, role: result.data.role })
           setAuthorizedEntry(entry)
         }
 
@@ -275,7 +261,7 @@ export function Access() {
     }
 
     setSavingProfile(true)
-    setProfileError(null)
+    setSaveError(null)
 
     try {
       const profileRef = doc(db, 'users', auth.currentUser.uid)
@@ -296,7 +282,7 @@ export function Access() {
       setProfileSaved(true)
       navigate('/')
     } catch (error) {
-      setProfileError(error instanceof Error ? error.message : 'No se pudo guardar el perfil. Vuelve a intentarlo más tarde.')
+      setSaveError(error instanceof Error ? error.message : 'No se pudo guardar el perfil. Vuelve a intentarlo más tarde.')
     } finally {
       setSavingProfile(false)
     }
@@ -505,8 +491,8 @@ export function Access() {
               </div>
             </label>
           </div>
-          {profileError && (
-            <p className="rounded-xl border border-error/30 bg-error/5 px-3 py-2 text-sm text-error">{profileError}</p>
+          {saveError && (
+            <p className="rounded-xl border border-error/30 bg-error/5 px-3 py-2 text-sm text-error">{saveError}</p>
           )}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <button
@@ -603,7 +589,7 @@ type AuthError = {
 
 function mapAuthError(error: unknown): AuthError {
   if (typeof error === 'object' && error && 'code' in error && 'message' in error) {
-    const firebaseError = error as FirebaseError
+    const firebaseError = error as FirestoreError
     switch (firebaseError.code) {
       case 'auth/invalid-email':
         return { code: firebaseError.code, message: 'El formato de correo no es válido.' }

@@ -71,7 +71,7 @@ export function AddGameForm({ eventId = 'main-event' }: { eventId?: string }) {
         bggData: {
           name: details.name,
           thumbnail: details.thumbnailUrl ?? details.imageUrl,
-          yearPublished: details.yearPublished,
+          yearPublished: details.yearPublished ?? undefined,
         },
       })
     } catch (error) {
@@ -106,7 +106,12 @@ export function AddGameForm({ eventId = 'main-event' }: { eventId?: string }) {
           placeholder="Buscar en BoardGameGeek (ej. Ark Nova)"
           className="input flex-grow"
         />
-        <select value={language} onChange={(e) => setLanguage(e.target.value)} className="input">
+        <select
+          value={language}
+          onChange={(e) => setLanguage(e.target.value)}
+          className="input"
+          aria-label="Idioma del juego"
+        >
           <option value="ES">Español</option>
           <option value="EN">Inglés</option>
           <option value="FR">Francés</option>
