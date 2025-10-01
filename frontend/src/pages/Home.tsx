@@ -458,7 +458,7 @@ export function Home() {
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <GameTitle
                         name={play.game}
-                        size="xs"
+                        size="sm"
                         textClassName="text-base font-semibold text-primary"
                         role="heading"
                         aria-level={3}
@@ -509,7 +509,7 @@ export function Home() {
                   return (
                     <article key={table.id} className="rounded-2xl bg-background/80 p-4">
                       <div className="flex items-center justify-between gap-3">
-                        <GameTitle name={table.game} size="xs" textClassName="text-base" />
+                        <GameTitle name={table.game} size="sm" textClassName="text-base" />
                         <span
                           className={clsx(
                             'rounded-full px-3 py-1 text-xs font-semibold',
@@ -559,7 +559,7 @@ export function Home() {
                   return (
                     <article key={table.id} className="rounded-2xl bg-primary/5 p-4">
                       <div className="flex items-center justify-between gap-3">
-                        <GameTitle name={table.game} size="xs" textClassName="text-base font-semibold text-primary" />
+                        <GameTitle name={table.game} size="sm" textClassName="text-base font-semibold text-primary" />
                         <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
                           Desde {startedAtLabel}
                         </span>

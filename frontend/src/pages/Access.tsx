@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent, JSX } from 'react'
+<<<<<<< ours
 import { Link, useNavigate } from 'react-router-dom'
+=======
+import { Link } from 'react-router-dom'
+>>>>>>> theirs
 import { clsx } from 'clsx'
 import {
   ArrowLeft,
@@ -14,8 +18,8 @@ import {
   UserRound,
 } from 'lucide-react'
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth'
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
-import type { DocumentData } from 'firebase/firestore'
+import { getFunctions, httpsCallable } from 'firebase/functions'
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
 import type { FirebaseError } from 'firebase/app'
 import { auth, db } from '../utils/firebase'
 import { useAuth } from '../components/AuthProvider'
@@ -48,12 +52,6 @@ type LanguageOption = 'es' | 'en'
 
 type VerificationStatus = 'idle' | 'checking' | 'success' | 'error'
 
-type AuthorizedEntry = {
-  email: string
-  role?: string
-  displayName?: string
-}
-
 const SUPPORT_EMAIL = 'soporte@juegoscongreso.com'
 
 export function Access() {
@@ -72,7 +70,6 @@ export function Access() {
   const [verificationAttempt, setVerificationAttempt] = useState(0)
   const [verificationError, setVerificationError] = useState<string | null>(null)
   const [profileSaved, setProfileSaved] = useState(false)
-  const [profileError, setProfileError] = useState<string | null>(null)
   const [savingProfile, setSavingProfile] = useState(false)
   const [authorizedEntry, setAuthorizedEntry] = useState<AuthorizedEntry | null>(null)
   const [profilePrefilled, setProfilePrefilled] = useState(false)
@@ -107,24 +104,22 @@ export function Access() {
       setVerificationError(null)
 
       try {
-        if (!canSubmitLogin) {
-          throw new Error('Revisa el correo y la contraseña antes de continuar.')
+        // 1. Llamar a la Cloud Function para verificar la whitelist
+        const functions = getFunctions()
+        const checkWhitelist = httpsCallable(functions, 'checkWhitelist')
+        const result = (await checkWhitelist({ email: normalizedEmail })) as {
+          data: { isAuthorized: boolean; role?: string }
         }
 
-        const whitelistRef = doc(db, 'authorizedEmails', normalizedEmail)
-        const whitelistSnap = await getDoc(whitelistRef)
-
-        if (!whitelistSnap.exists()) {
+        if (!result.data.isAuthorized) {
           throw new Error('Tu correo no forma parte de la whitelist habilitada para el evento.')
         }
 
-        const whitelistData = whitelistSnap.data()
-        const entry = mapAuthorizedEntry(normalizedEmail, whitelistData)
-
         if (!cancelled) {
-          setAuthorizedEntry(entry)
+          setAuthorizedEntry({ email: normalizedEmail, role: result.data.role })
         }
 
+        // 2. Si está autorizado, intentar el login o crear el usuario
         let currentUser = auth.currentUser
         const isDifferentUser = currentUser?.email?.toLowerCase() !== normalizedEmail
 
@@ -147,23 +142,7 @@ export function Access() {
           throw new Error('No se pudo establecer tu sesión. Intenta de nuevo en unos segundos.')
         }
 
-        const profileRef = doc(db, 'users', currentUser.uid)
-        const profileSnap = await getDoc(profileRef)
-
         if (!cancelled) {
-          if (profileSnap.exists()) {
-            const data = profileSnap.data()
-            setAlias((prev) => prev || data.alias || entry.displayName || normalizedEmail.split('@')[0])
-            setFullName(data.fullName ?? '')
-            setLanguage((data.language as LanguageOption | undefined) ?? 'es')
-            setConsent(Boolean(data.consentAt))
-          } else {
-            setAlias((prev) => prev || entry.displayName || normalizedEmail.split('@')[0])
-            setFullName('')
-            setConsent(false)
-          }
-
-          setProfilePrefilled(false)
           setVerificationStatus('success')
           setCurrentStep('profile')
         }
@@ -171,7 +150,6 @@ export function Access() {
         if (cancelled) {
           return
         }
-
         setVerificationStatus('error')
         setVerificationError(error instanceof Error ? error.message : 'No se pudo validar tu acceso. Intenta nuevamente.')
         if (auth.currentUser && auth.currentUser.email?.toLowerCase() !== normalizedEmail) {

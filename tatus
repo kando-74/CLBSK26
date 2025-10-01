@@ -1,0 +1,91 @@
+* [33ma903899f[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m WIP: cambios locales antes de rebase
+* [33m457b2d09[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m chore: ignorar archivos de build
+* [33m071b97a0[m git
+[31m|[m * [33m5c11b521[m[33m ([m[1;31morigin/dev[m[33m)[m feat(profile): habilita gestion de avatar con firebase storage
+[31m|[m * [33m4e4bd845[m chore(ci): documenta pipeline del frontend
+[31m|[m * [33mc0f55213[m git commit
+[31m|[m * [33m2c74e26e[m docs: incorporar roadmap post-MVP y backlog detallado
+[31m|[m * [33m6ca9de81[m feat: show live event dashboard
+[31m|[m * [33mbfcec117[m fix: restaurar carga de home y ajustar integraciones
+[31m|[m * [33m50929f88[m feat: exponer fichas públicas y enlaces a usuarios
+[31m|[m * [33m4a65ab16[m feat: añadir avisos en vivo y resaltados en tablero
+[31m|[m * [33m77e3e7ca[m feat: habilitar actualizaciones en vivo de plays
+[31m|[m * [33mb9ae4b8b[m feat: sincronizar registros y estadísticas con Firestore
+[31m|[m * [33m680134e3[m feat: connect statistics dashboard to live play data
+[31m|[m * [33m3b640a08[m feat: sync table lifecycle and active plays via Firestore
+[31m|[m * [33mbc8ad106[m feat: add table lifecycle controls and live play analytics
+[31m|[m * [33m423993cb[m feat: support local aliases and client-side play duplicate checks
+[31m|[m * [33mb78f5d33[m feat: add table chat with public and participant channels
+[31m|[m * [33m02fb4c2c[m feat: keep table participants and covers in sync
+[31m|[m * [33m6abb021f[m git add src/pages/Board.tsx src/pages/Library.tsx src/pages/__tests__/Board.test.tsx src/services/library.ts src/services/activity.ts src/pages/Organization.tsx src/utils/user.ts git commit -m "Permite iniciar mesa desde la ludoteca y mantiene identidad de usuario"
+[31m|[m * [33m3781434d[m git add src/services/activity.ts src/pages/Organization.tsx git commit -m "Muestra actividad en vivo en el panel de organización"
+[31m|[m * [33mad2ba946[m git add src/services/activity.ts src/services/tables.ts src/services/library.ts git commit -m "Añade logging de actividades para mesas y ludoteca"
+[31m|[m * [33m3dd68dee[m git add src/services/library.ts git commit -m "Sincroniza la ludoteca en tiempo real con Firestore"
+[31m|[m * [33m6d0667f5[m git add src/services/tables.ts git commit -m "Escucha cambios del tablón en tiempo real desde Firestore"
+[31m|[m * [33me219890a[m git commit -m "Sincroniza la ludoteca con Firestore y añade fallback local"
+[31m|[m * [33m36754204[m git commit -m "Sincroniza tablero con Firestore y conserva fallback local"
+[31m|[m * [33m4674017d[m git commit -m "Ajusta accesibilidad de GameTitle y corrige formulario de Board"
+[31m|[m * [33m5ea0b285[m git commit
+[31m|[m * [33maeca6f74[m git commit
+[31m|[m * [33m3eabaca4[m git add Sprint-Plan.md
+[31m|[m * [33m2c3a1592[m  .git/COMMIT_EDITMSG
+[31m|[m * [33mb53aceb7[m feat: implement table management features with filters and creation form
+[31m|[m [32m|[m *   [33md0a975ea[m[33m ([m[1;31morigin/feature/probar-hooks[m[33m)[m Merge pull request #12 from kando-74/feature/probar-husky-root
+[31m|[m [32m|[m [33m|[m[34m\[m  
+[31m|[m [32m|[m [33m|[m * [33ma01f0afa[m[33m ([m[1;31morigin/feature/probar-husky-root[m[33m, [m[1;32mfeature/probar-husky-root[m[33m)[m test: hook
+[31m|[m [32m|[m [33m|[m * [33md266a29b[m test: hook
+[31m|[m [32m|[m [33m|[m * [33m9736bb98[m test: lint-staged con .lintstagedrc.json
+[31m|[m [32m|[m [33m|[m * [33me7891440[m chore: add initial configuration files (.editorconfig, .env.example, .gitattributes, .vscode)
+[31m|[m [32m|[m [33m|[m * [33md746ef65[m test: confirmar hook en raíz
+[31m|[m [32m|[m [33m|[m[33m/[m  
+[31m|[m [32m|[m * [33mb61b3875[m[33m ([m[1;32mfeature/probar-hooks[m[33m)[m chore: ignora backups locales (*.backup.json)
+[31m|[m [32m|[m * [33m12e5068e[m chore: activar husky en la raíz (core.hooksPath) y evitar duplicados
+[31m|[m [32m|[m * [33m99e3d762[m test: probar hook de pre-commit (prettier)
+[31m|[m [32m|[m[32m/[m  
+[31m|[m * [33ma9dfe03b[m[33m ([m[1;32mdev[m[33m)[m chore: Husky + lint-staged + Prettier y conexión con ESLint
+[31m|[m[31m/[m  
+*   [33m40df4e29[m Merge pull request #11 from kando-74/codex/identify-unimplemented-ui-features
+[35m|[m[36m\[m  
+[35m|[m * [33mb40d691d[m[33m ([m[1;31morigin/codex/identify-unimplemented-ui-features[m[33m)[m Integrate Firebase auth and onboarding
+[35m|[m[35m/[m  
+*   [33mb22398c1[m Merge pull request #10 from kando-74/codex/add-game-cover-display-feature
+[1;31m|[m[1;32m\[m  
+[1;31m|[m * [33m7e55b852[m[33m ([m[1;31morigin/codex/add-game-cover-display-feature[m[33m)[m feat: mostrar portada junto al nombre del juego
+[1;31m|[m[1;31m/[m  
+*   [33m6d1893f7[m Merge pull request #9 from kando-74/codex/connect-to-bgg-api-for-game-data-import
+[1;33m|[m[1;34m\[m  
+[1;33m|[m * [33m69235eb3[m[33m ([m[1;31morigin/codex/connect-to-bgg-api-for-game-data-import[m[33m)[m Integrate BoardGameGeek import flow
+[1;33m|[m[1;33m/[m  
+*   [33m484dd695[m Merge pull request #8 from kando-74/codex/add-continuation-feature
+[1;35m|[m[1;36m\[m  
+[1;35m|[m * [33m7caae21e[m[33m ([m[1;31morigin/codex/add-continuation-feature[m[33m)[m feat: add organization control panel view
+[1;35m|[m[1;35m/[m  
+*   [33mc2fb8479[m Merge pull request #7 from kando-74/codex/continue-the-process
+[31m|[m[32m\[m  
+[31m|[m * [33m41b6388a[m[33m ([m[1;31morigin/codex/continue-the-process[m[33m)[m feat: add onboarding access flow
+[31m|[m[31m/[m  
+*   [33m49952a64[m Merge pull request #6 from kando-74/codex/continue-with-the-process-mr11k3
+[33m|[m[34m\[m  
+[33m|[m * [33m253b9c58[m[33m ([m[1;31morigin/codex/continue-with-the-process-mr11k3[m[33m)[m feat: add statistics dashboard page
+[33m|[m[33m/[m  
+*   [33ma629d76b[m Merge pull request #5 from kando-74/codex/continue-implementation-of-feature
+[35m|[m[36m\[m  
+[35m|[m * [33m3bc6371b[m[33m ([m[1;31morigin/codex/continue-implementation-of-feature[m[33m)[m feat: scaffold frontend pwa
+[35m|[m[35m/[m  
+*   [33m10fca603[m Merge pull request #4 from kando-74/codex/continue-with-the-process
+[1;31m|[m[1;32m\[m  
+[1;31m|[m * [33m6f246342[m[33m ([m[1;31morigin/codex/continue-with-the-process[m[33m)[m Detallar especificaciones UX/UI
+[1;31m|[m[1;31m/[m  
+*   [33m83093b60[m Merge pull request #3 from kando-74/codex/find-next-steps
+[1;33m|[m[1;34m\[m  
+[1;33m|[m * [33mf278652c[m[33m ([m[1;31morigin/codex/find-next-steps[m[33m)[m Define plan de ejecución del MVP
+[1;33m|[m[1;33m/[m  
+*   [33m9fb3d6c2[m Merge pull request #2 from kando-74/codex/find-the-next-steps-based-on-readme
+[1;35m|[m[1;36m\[m  
+[1;35m|[m * [33m7c104842[m[33m ([m[1;31morigin/codex/find-the-next-steps-based-on-readme[m[33m)[m Document initial whitelist and admin
+[1;35m|[m[1;35m/[m  
+*   [33m7ab01e61[m Merge pull request #1 from kando-74/codex/include-readme-with-project-guide
+[31m|[m[32m\[m  
+[31m|[m * [33m05e97267[m[33m ([m[1;31morigin/codex/include-readme-with-project-guide[m[33m)[m Add comprehensive PRD README
+[31m|[m[31m/[m  
+* [33mc5a6e7be[m Initial commit
