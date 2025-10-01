@@ -15,7 +15,7 @@ import {
   UserRound,
 } from 'lucide-react'
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth'
-import { doc, getDoc, serverTimestamp, setDoc, type DocumentData, type FirestoreError } from 'firebase/firestore'
+import { doc, getDoc, serverTimestamp, setDoc, type DocumentData } from 'firebase/firestore'
 import { auth, db } from '../utils/firebase'
 import { useAuth } from '../components/AuthProvider'
 
