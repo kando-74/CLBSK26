@@ -1,2 +1,15 @@
-frontend/node_modules/
-node_modules
+# Dependencies
+/node_modules
+/frontend/node_modules
+/functions/node_modules
+
+# Build output
+/frontend/dist
+/functions/lib
+
+# Firebase
+.firebase
+firebase-debug.log
+
+# Environment variables
+.env*
