@@ -671,8 +671,8 @@ export function Statistics() {
                     <div key={slot.hour} className="flex flex-1 flex-col items-center gap-2 text-xs text-text-secondary">
                       <div className="flex h-32 w-full items-end justify-center rounded-t-full bg-primary/10">
                         <div
-                          className="w-3 rounded-t-full bg-primary"
-                          style={{ height: `calc(${(slot.value / maxHourValue) * 100}%)` }}
+                          className="h-[var(--bar-height)] w-3 rounded-t-full bg-primary"
+                          style={{ '--bar-height': `calc(${(slot.value / maxHourValue) * 100}%)` } as React.CSSProperties}
                         />
                       </div>
                       <span className="font-semibold text-text-primary">{slot.value}</span>

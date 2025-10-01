@@ -548,7 +548,10 @@ export function Access() {
           </div>
           <div className="rounded-full bg-background shadow-card">
             <div className="relative h-2 overflow-hidden rounded-full bg-slate-200">
-              <div className="absolute inset-y-0 left-0 bg-primary transition-all" style={{ width: `${progress}%` }} />
+              <div
+                className="absolute inset-y-0 left-0 w-[var(--progress-width)] bg-primary transition-all"
+                style={{ '--progress-width': `${progress}%` } as React.CSSProperties}
+              />
             </div>
             <div className="mt-3 flex items-center justify-between text-xs font-semibold text-text-secondary">
               {onboardingSteps.map((step, index) => (
