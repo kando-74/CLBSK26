@@ -18,7 +18,12 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": { "@/*": ["src/*"] }
+    "paths": {
+      "@/*": ["src/*"]
+    }
   },
   "include": ["src"],
   "references": [{ "path": "./tsconfig.node.json" }]
+  "include": ["src", "vite.config.ts"],
+  "exclude": ["node_modules", "dist"]
 }
