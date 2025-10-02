@@ -9,6 +9,9 @@ const libraryCollection = db.collection("libraryEntries");
 const activityCollection = db.collection("activityLogs");
 const authorizedEmailsCollection = db.collection("authorizedEmails");
 
+type WhitelistRole = "asistente" | "staff" | "organizacion";
+type WhitelistStatus = "approved" | "pending" | "revoked";
+
 type AddLibraryEntryPayload = {
   eventId?: string;
   language?: string;
@@ -73,6 +76,24 @@ type CheckWhitelistResponse = {
   entry?: Record<string, unknown>;
 };
 
+type AddAuthorizedEmailPayload = {
+  email?: string;
+  role?: string;
+};
+
+type AddAuthorizedEmailResponse = {
+  status: "success";
+  entry: {
+    email: string;
+    role: WhitelistRole;
+    status: WhitelistStatus;
+    invitedBy: string | null;
+    displayName: string | null;
+    notes: string | null;
+    updatedAt: admin.firestore.Timestamp;
+  };
+};
+
 function sanitizeString(value: unknown, fallback = ""): string {
   if (typeof value === "string") {
     const trimmed = value.trim();
@@ -95,6 +116,26 @@ function coerceMechanics(value: unknown): string[] {
 function optionalString(value: unknown): string | null {
   const sanitized = sanitizeString(value, "");
   return sanitized.length > 0 ? sanitized : null;
+}
+
+function sanitizeEmail(value: unknown): string {
+  return sanitizeString(value, "").toLowerCase();
+}
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function normalizeWhitelistRole(value: unknown): WhitelistRole {
+  if (value === "staff" || value === "organizacion") {
+    return value;
+  }
+  return "asistente";
+}
+
+function normalizeWhitelistStatus(value: unknown): WhitelistStatus {
+  if (value === "pending" || value === "revoked") {
+    return value;
+  }
+  return "approved";
 }
 
 function resolveOwnerName(request: CallableRequest<AddLibraryEntryPayload>): string {
@@ -264,6 +305,98 @@ export const checkWhitelist = onCall(async (request: CallableRequest<CheckWhitel
   } catch (error) {
     logger.error("Error verificando whitelist", error);
     throw new HttpsError("internal", "No se pudo verificar el acceso en este momento.");
+  }
+});
+
+export const addAuthorizedEmail = onCall(async (request: CallableRequest<AddAuthorizedEmailPayload>) => {
+  const actorEmail = sanitizeEmail(request.auth?.token?.email ?? null);
+  if (!actorEmail) {
+    throw new HttpsError("permission-denied", "Debes iniciar sesion para gestionar la whitelist.");
+  }
+
+  try {
+    const actorSnapshot = await authorizedEmailsCollection.doc(actorEmail).get();
+    const actorRole = sanitizeString(actorSnapshot.data()?.role, "");
+
+    if (actorRole !== "organizacion") {
+      throw new HttpsError("permission-denied", "No tienes permisos para modificar la whitelist.");
+    }
+
+    const email = sanitizeEmail(request.data?.email ?? null);
+    if (!email || !EMAIL_REGEX.test(email)) {
+      throw new HttpsError("invalid-argument", "Debes proporcionar un correo electronico valido.");
+    }
+
+    const role = normalizeWhitelistRole(request.data?.role ?? null);
+    const now = admin.firestore.Timestamp.now();
+    const serverTimestamp = admin.firestore.FieldValue.serverTimestamp();
+
+    const documentRef = authorizedEmailsCollection.doc(email);
+    const existingSnapshot = await documentRef.get();
+
+    if (!existingSnapshot.exists) {
+      await documentRef.set({
+        email,
+        role,
+        status: "approved",
+        invitedBy: actorEmail,
+        displayName: null,
+        notes: null,
+        createdAt: serverTimestamp,
+        updatedAt: serverTimestamp,
+      });
+
+      return {
+        status: "success",
+        entry: {
+          email,
+          role,
+          status: "approved",
+          invitedBy: actorEmail,
+          displayName: null,
+          notes: null,
+          updatedAt: now,
+        },
+      } satisfies AddAuthorizedEmailResponse;
+    }
+
+    const existingData = existingSnapshot.data() ?? {};
+    const status = normalizeWhitelistStatus(existingData.status);
+    const invitedBy = optionalString(existingData.invitedBy ?? actorEmail);
+    const displayName = optionalString(existingData.displayName ?? null);
+    const notes = optionalString(existingData.notes ?? null);
+
+    await documentRef.set(
+      {
+        email,
+        role,
+        status,
+        invitedBy,
+        displayName,
+        notes,
+        updatedAt: serverTimestamp,
+      },
+      { merge: true },
+    );
+
+    return {
+      status: "success",
+      entry: {
+        email,
+        role,
+        status,
+        invitedBy,
+        displayName,
+        notes,
+        updatedAt: now,
+      },
+    } satisfies AddAuthorizedEmailResponse;
+  } catch (error) {
+    logger.error("Error al actualizar la whitelist", error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError("internal", "No se pudo actualizar la whitelist.");
   }
 });
 
