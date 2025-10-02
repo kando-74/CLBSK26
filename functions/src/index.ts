@@ -1,5 +1,5 @@
 import { onCall, HttpsError, type CallableRequest } from "firebase-functions/v2/https";
-import { logger } from "firebase-functions/v2/logger";
+import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
 
 admin.initializeApp();
@@ -82,13 +82,19 @@ function sanitizeString(value: unknown, fallback = ""): string {
 }
 
 function coerceMechanics(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => (typeof item === "string" ? item.trim() : ""))
-      .filter((item) => item.length > 0)
-      .slice(0, 16);
+  if (!Array.isArray(value)) {
+    return [];
   }
-  return [];
+
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter((item) => item.length > 0)
+    .slice(0, 16);
+}
+
+function optionalString(value: unknown): string | null {
+  const sanitized = sanitizeString(value, "");
+  return sanitized.length > 0 ? sanitized : null;
 }
 
 function resolveOwnerName(request: CallableRequest<AddLibraryEntryPayload>): string {
@@ -116,13 +122,20 @@ function resolveOwnerName(request: CallableRequest<AddLibraryEntryPayload>): str
 }
 
 function resolveOwnerEmail(request: CallableRequest<AddLibraryEntryPayload>): string | null {
-  const entryOwnerEmail = sanitizeString(request.data?.entry?.ownerEmail ?? null, "");
+  const entryOwnerEmail = optionalString(request.data?.entry?.ownerEmail ?? null);
   if (entryOwnerEmail) {
     return entryOwnerEmail;
   }
 
-  const authEmail = sanitizeString(request.auth?.token?.email ?? null, "");
-  return authEmail || null;
+  return optionalString(request.auth?.token?.email ?? null);
+}
+
+function toTimestamp(value: unknown): admin.firestore.Timestamp | null {
+  if (value instanceof admin.firestore.Timestamp) {
+    return value;
+  }
+
+  return null;
 }
 
 function buildLibraryEntry(
@@ -136,11 +149,17 @@ function buildLibraryEntry(
   const manualTitle = sanitizeString(request.data?.manualTitle, "");
   const bggData = request.data?.bggData ?? null;
   const titleFromBgg = sanitizeString(bggData?.name, "");
-  const resolvedTitle = sanitizeString(providedEntry?.title ?? manualTitle ?? titleFromBgg, "Juego sin título");
+  const resolvedTitle = sanitizeString(providedEntry?.title ?? manualTitle ?? titleFromBgg, "Juego sin titulo");
 
   const coverFromInput = providedEntry?.coverUrl ?? null;
   const coverFromBgg = bggData?.imageUrl ?? bggData?.thumbnail ?? null;
-  const coverUrl = coverFromInput ?? (coverFromBgg ?? null);
+  const preferredCover = coverFromInput ?? coverFromBgg ?? null;
+  const normalizedCover = optionalString(preferredCover);
+
+  const providedOwnerId = optionalString(providedEntry?.ownerId ?? null);
+  const ownerId = providedOwnerId ?? request.auth?.uid ?? null;
+
+  const eventIdCandidate = optionalString(providedEntry?.eventId ?? request.data?.eventId ?? null);
 
   const nowTimestamp = admin.firestore.Timestamp.now();
 
@@ -148,14 +167,14 @@ function buildLibraryEntry(
     id,
     title: resolvedTitle,
     owner: resolveOwnerName(request),
-    ownerId: sanitizeString(providedEntry?.ownerId, "") || request.auth?.uid ?? null,
+    ownerId,
     ownerEmail: resolveOwnerEmail(request),
     players: sanitizeString(providedEntry?.players, "N/D"),
     duration: sanitizeString(providedEntry?.duration, "N/D"),
     weight: sanitizeString(providedEntry?.weight, "N/D"),
     language,
     mechanics: coerceMechanics(mechanics),
-    coverUrl: coverUrl ? sanitizeString(coverUrl) : null,
+    coverUrl: normalizedCover,
     manual:
       typeof providedEntry?.manual === "boolean"
         ? providedEntry.manual
@@ -166,8 +185,7 @@ function buildLibraryEntry(
         : typeof request.data?.bggId === "number"
           ? request.data.bggId
           : null,
-    eventId:
-      sanitizeString(providedEntry?.eventId ?? request.data?.eventId ?? null, "") || null,
+    eventId: eventIdCandidate,
     createdAt: nowTimestamp,
     updatedAt: nowTimestamp,
   };
@@ -177,23 +195,28 @@ function mapFirestoreEntry(
   id: string,
   data: FirebaseFirestore.DocumentData,
 ): LibraryEntryRecord {
+  const cover = optionalString(data.coverUrl ?? null);
+  const ownerId = optionalString(data.ownerId ?? null);
+  const ownerEmail = optionalString(data.ownerEmail ?? null);
+  const eventId = optionalString(data.eventId ?? null);
+
   return {
     id,
-    title: sanitizeString(data.title, "Juego sin título"),
+    title: sanitizeString(data.title, "Juego sin titulo"),
     owner: sanitizeString(data.owner, "Participante"),
-    ownerId: sanitizeString(data.ownerId ?? null, "") || null,
-    ownerEmail: sanitizeString(data.ownerEmail ?? null, "") || null,
+    ownerId,
+    ownerEmail,
     players: sanitizeString(data.players, "N/D"),
     duration: sanitizeString(data.duration, "N/D"),
     weight: sanitizeString(data.weight, "N/D"),
     language: sanitizeString(data.language, "N/D"),
     mechanics: coerceMechanics(data.mechanics),
-    coverUrl: sanitizeString(data.coverUrl ?? null, "") || null,
+    coverUrl: cover,
     manual: Boolean(data.manual),
     bggId: typeof data.bggId === "number" ? data.bggId : null,
-    eventId: sanitizeString(data.eventId ?? null, "") || null,
-    createdAt: data.createdAt ?? null,
-    updatedAt: data.updatedAt ?? null,
+    eventId,
+    createdAt: toTimestamp(data.createdAt ?? null),
+    updatedAt: toTimestamp(data.updatedAt ?? null),
   };
 }
 
@@ -224,31 +247,32 @@ async function logLibraryActivity(entry: LibraryEntryRecord, actorEmail: string 
   }
 }
 
-export const checkWhitelist = onCall<CheckWhitelistPayload, CheckWhitelistResponse>(async (request) => {
+export const checkWhitelist = onCall(async (request: CallableRequest<CheckWhitelistPayload>) => {
   const email = sanitizeString(request.data?.email, "").toLowerCase();
   if (!email) {
-    throw new HttpsError("invalid-argument", "Debes proporcionar un correo electrónico válido.");
+    throw new HttpsError("invalid-argument", "Debes proporcionar un correo electronico valido.");
   }
 
   try {
     const document = await authorizedEmailsCollection.doc(email).get();
     if (!document.exists) {
-      return { allowed: false };
+      return { allowed: false } satisfies CheckWhitelistResponse;
     }
 
-    return { allowed: true, entry: document.data() ?? {} };
+    const entry = (document.data() ?? {}) as Record<string, unknown>;
+    return { allowed: true, entry } satisfies CheckWhitelistResponse;
   } catch (error) {
     logger.error("Error verificando whitelist", error);
     throw new HttpsError("internal", "No se pudo verificar el acceso en este momento.");
   }
 });
 
-export const addLibraryEntry = onCall<AddLibraryEntryPayload, LibraryActionResponse>(async (request) => {
+export const addLibraryEntry = onCall(async (request: CallableRequest<AddLibraryEntryPayload>) => {
   const payload = request.data ?? {};
 
   const title = sanitizeString(payload.entry?.title ?? payload.manualTitle ?? payload.bggData?.name, "");
   if (!title && typeof payload.bggId !== "number") {
-    throw new HttpsError("invalid-argument", "Debes proporcionar un título o un identificador de BGG.");
+    throw new HttpsError("invalid-argument", "Debes proporcionar un titulo o un identificador de BGG.");
   }
 
   const desiredId = sanitizeString(payload.entry?.id, "") || (payload.bggId ? `bgg-${payload.bggId}` : "");
@@ -258,7 +282,7 @@ export const addLibraryEntry = onCall<AddLibraryEntryPayload, LibraryActionRespo
     const existingDoc = await libraryCollection.doc(entryId).get();
     if (existingDoc.exists) {
       const existingEntry = mapFirestoreEntry(entryId, existingDoc.data() ?? {});
-      return { status: "already-exists", entry: existingEntry };
+      return { status: "already-exists", entry: existingEntry } satisfies LibraryActionResponse;
     }
 
     if (typeof payload.bggId === "number") {
@@ -269,7 +293,7 @@ export const addLibraryEntry = onCall<AddLibraryEntryPayload, LibraryActionRespo
 
       if (!existingByBgg.empty) {
         const doc = existingByBgg.docs[0];
-        return { status: "already-exists", entry: mapFirestoreEntry(doc.id, doc.data()) };
+        return { status: "already-exists", entry: mapFirestoreEntry(doc.id, doc.data()) } satisfies LibraryActionResponse;
       }
     }
 
@@ -296,9 +320,13 @@ export const addLibraryEntry = onCall<AddLibraryEntryPayload, LibraryActionRespo
 
     await logLibraryActivity(entry, entry.ownerEmail);
 
-    return { status: "success", entry };
+    return { status: "success", entry } satisfies LibraryActionResponse;
   } catch (error) {
-    logger.error("Error al añadir un juego a la ludoteca", error);
+    logger.error("Error al anadir un juego a la ludoteca", error);
     throw new HttpsError("internal", "No se pudo registrar el juego en la ludoteca.");
   }
 });
+
+
+
+

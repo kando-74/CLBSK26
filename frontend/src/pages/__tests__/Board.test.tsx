@@ -35,6 +35,10 @@ vi.mock('../../components/LiveEventsProvider', () => ({
   }),
 }))
 
+function normalizeText(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
 function renderBoard() {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -71,7 +75,9 @@ describe('Board page', () => {
     await screen.findByText('Revive: plaza reservada')
 
     await user.click(screen.getByRole('button', { name: /Gestionar filtros/i }))
-    const hideJoinedCheckbox = await screen.findByLabelText(/Ocultar mesas donde ya est/i)
+    const hideJoinedCheckbox = await screen.findByLabelText((content) =>
+      normalizeText(content).includes('ocultar mesas donde ya estas apuntado'),
+    )
     await user.click(hideJoinedCheckbox)
 
     await waitFor(() => {
@@ -93,10 +99,10 @@ describe('Board page', () => {
     const submitButton = screen.getByRole('button', { name: 'Publicar mesa' })
     await user.click(submitButton)
 
-    const errorMessage = await screen.findByText(
-      'Describe la mesa para que otras personas sepan qué esperar.',
+    const errorMessage = await screen.findByText((content) =>
+      normalizeText(content).includes('describe la mesa para que otras personas sepan que esperar'),
     )
-    expect(errorMessage).toBeInTheDocument()
+    expect(errorMessage).not.toBeNull()
   })
 
   it('creates a table and reserves a seat for the current user', async () => {
@@ -110,10 +116,17 @@ describe('Board page', () => {
     await user.type(screen.getByPlaceholderText('Nombre del juego'), 'Heat: Pedal to the Metal')
     await user.clear(screen.getByPlaceholderText('Tu nombre o alias'))
     await user.type(screen.getByPlaceholderText('Tu nombre o alias'), 'Nerea')
-    await user.type(screen.getByPlaceholderText(/Sala o ubicaci/i), 'Sala Roja')
     await user.type(
-      screen.getByPlaceholderText(/Añade detalles relevantes/i),
-      'Carrera rápida con explicación inicial.',
+      screen.getByPlaceholderText((placeholder) =>
+        normalizeText(placeholder).includes('sala o ubicacion'),
+      ),
+      'Sala Roja',
+    )
+    await user.type(
+      screen.getByPlaceholderText((placeholder) =>
+        normalizeText(placeholder).includes('anade detalles relevantes'),
+      ),
+      'Carrera rapida con explicacion inicial.',
     )
 
     await user.click(screen.getByRole('button', { name: 'Publicar mesa' }))
@@ -125,6 +138,7 @@ describe('Board page', () => {
     expect(newTableCard).not.toBeNull()
 
     const joinedButton = await within(newTableCard as HTMLElement).findByRole('button', { name: 'Apuntado' })
-    expect(joinedButton).toBeDisabled()
+    const joinedButtonElement = joinedButton as HTMLButtonElement
+    expect(joinedButtonElement.disabled).toBe(true)
   })
 })
