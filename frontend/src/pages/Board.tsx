@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import React, { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { CalendarCheck, Clock, MapPin, Plus, Sparkles } from 'lucide-react'
 import { GameTitle } from '../components/GameTitle'
 import {

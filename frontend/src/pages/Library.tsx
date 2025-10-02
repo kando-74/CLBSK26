@@ -564,7 +564,7 @@ export function Library() {
             </div>
             <form onSubmit={handleSubmitTable} className="space-y-4">
               <div className="rounded-2xl border border-primary/20 bg-background px-4 py-3">
-                <GameTitle name={tableDraft.game.title} coverUrl={tableDraft.game.coverUrl} size="sm" />
+                <GameTitle name={tableDraft.game.title} coverUrl={tableDraft.game.coverUrl ?? undefined} size="sm" />
                 <p className="mt-2 text-xs text-text-secondary">
                   Propietario: {tableDraft.game.owner || 'Sin propietario registrado'}
                 </p>
@@ -831,7 +831,7 @@ export function Library() {
               <div className="flex items-start justify-between gap-4">
                 <GameTitle
                   name={game.title}
-                  coverUrl={game.coverUrl}
+                  coverUrl={game.coverUrl ?? undefined}
                   size="lg"
                   className="items-start"
                   textClassName="text-xl"
