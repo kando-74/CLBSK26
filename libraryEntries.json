@@ -1,0 +1,289 @@
+{
+  "documents": [
+    {
+      "name": "projects/clbsk26/databases/(default)/documents/libraryEntries/bgg-342942",
+      "fields": {
+        "manual": {
+          "booleanValue": false
+        },
+        "eventId": {
+          "nullValue": null
+        },
+        "players": {
+          "stringValue": "1-4"
+        },
+        "duration": {
+          "stringValue": "90-150 min"
+        },
+        "title": {
+          "stringValue": "Ark Nova"
+        },
+        "owner": {
+          "stringValue": "CLI User"
+        },
+        "mechanics": {
+          "arrayValue": {
+            "values": [
+              {
+                "stringValue": "Economic"
+              },
+              {
+                "stringValue": "Hand Management"
+              }
+            ]
+          }
+        },
+        "bggId": {
+          "integerValue": "342942"
+        },
+        "titleLower": {
+          "stringValue": "ark nova"
+        },
+        "coverUrl": {
+          "stringValue": "https://example.com/arknova.jpg"
+        },
+        "updatedAt": {
+          "timestampValue": "2025-10-02T21:46:11.087Z"
+        },
+        "ownerId": {
+          "stringValue": "cli-user-id"
+        },
+        "weight": {
+          "stringValue": "3.7"
+        },
+        "language": {
+          "stringValue": "BGG"
+        },
+        "createdAt": {
+          "timestampValue": "2025-10-02T21:46:11.087Z"
+        },
+        "ownerEmail": {
+          "nullValue": null
+        }
+      },
+      "createTime": "2025-10-02T21:46:11.108470Z",
+      "updateTime": "2025-10-02T21:46:11.108470Z"
+    },
+    {
+      "name": "projects/clbsk26/databases/(default)/documents/libraryEntries/cli-sdk",
+      "fields": {
+        "titleLower": {
+          "stringValue": "cli via sdk"
+        },
+        "coverUrl": {
+          "nullValue": null
+        },
+        "owner": {
+          "stringValue": "CLI"
+        },
+        "createdAt": {
+          "timestampValue": "2025-10-02T21:44:03.383Z"
+        },
+        "duration": {
+          "stringValue": "N/D"
+        },
+        "ownerEmail": {
+          "nullValue": null
+        },
+        "ownerId": {
+          "nullValue": null
+        },
+        "eventId": {
+          "nullValue": null
+        },
+        "updatedAt": {
+          "timestampValue": "2025-10-02T21:44:03.383Z"
+        },
+        "language": {
+          "stringValue": "N/D"
+        },
+        "bggId": {
+          "integerValue": "995"
+        },
+        "players": {
+          "stringValue": "N/D"
+        },
+        "title": {
+          "stringValue": "CLI via SDK"
+        },
+        "weight": {
+          "stringValue": "N/D"
+        },
+        "mechanics": {
+          "arrayValue": {}
+        },
+        "manual": {
+          "booleanValue": false
+        }
+      },
+      "createTime": "2025-10-02T21:44:03.403045Z",
+      "updateTime": "2025-10-02T21:44:03.403045Z"
+    },
+    {
+      "name": "projects/clbsk26/databases/(default)/documents/libraryEntries/test-cli",
+      "fields": {
+        "owner": {
+          "stringValue": "CLI"
+        },
+        "manual": {
+          "booleanValue": false
+        },
+        "duration": {
+          "stringValue": "N/D"
+        },
+        "titleLower": {
+          "stringValue": "test cli"
+        },
+        "createdAt": {
+          "timestampValue": "2025-10-02T21:36:38.100Z"
+        },
+        "ownerId": {
+          "nullValue": null
+        },
+        "updatedAt": {
+          "timestampValue": "2025-10-02T21:36:38.100Z"
+        },
+        "weight": {
+          "stringValue": "N/D"
+        },
+        "ownerEmail": {
+          "nullValue": null
+        },
+        "title": {
+          "stringValue": "Test CLI"
+        },
+        "players": {
+          "stringValue": "N/D"
+        },
+        "mechanics": {
+          "arrayValue": {}
+        },
+        "eventId": {
+          "nullValue": null
+        },
+        "bggId": {
+          "integerValue": "999"
+        },
+        "language": {
+          "stringValue": "N/D"
+        },
+        "coverUrl": {
+          "nullValue": null
+        }
+      },
+      "createTime": "2025-10-02T21:36:38.123700Z",
+      "updateTime": "2025-10-02T21:36:38.123700Z"
+    },
+    {
+      "name": "projects/clbsk26/databases/(default)/documents/libraryEntries/test-cli2",
+      "fields": {
+        "weight": {
+          "stringValue": "N/D"
+        },
+        "manual": {
+          "booleanValue": false
+        },
+        "title": {
+          "stringValue": "Test CLI2"
+        },
+        "duration": {
+          "stringValue": "N/D"
+        },
+        "coverUrl": {
+          "nullValue": null
+        },
+        "language": {
+          "stringValue": "N/D"
+        },
+        "mechanics": {
+          "arrayValue": {}
+        },
+        "bggId": {
+          "integerValue": "998"
+        },
+        "createdAt": {
+          "timestampValue": "2025-10-02T21:41:09.930Z"
+        },
+        "updatedAt": {
+          "timestampValue": "2025-10-02T21:41:09.930Z"
+        },
+        "ownerEmail": {
+          "nullValue": null
+        },
+        "titleLower": {
+          "stringValue": "test cli2"
+        },
+        "players": {
+          "stringValue": "N/D"
+        },
+        "owner": {
+          "stringValue": "CLI"
+        },
+        "eventId": {
+          "nullValue": null
+        },
+        "ownerId": {
+          "nullValue": null
+        }
+      },
+      "createTime": "2025-10-02T21:41:09.951069Z",
+      "updateTime": "2025-10-02T21:41:09.951069Z"
+    },
+    {
+      "name": "projects/clbsk26/databases/(default)/documents/libraryEntries/test-cli3",
+      "fields": {
+        "createdAt": {
+          "timestampValue": "2025-10-02T21:42:31.018Z"
+        },
+        "language": {
+          "stringValue": "N/D"
+        },
+        "mechanics": {
+          "arrayValue": {}
+        },
+        "ownerId": {
+          "nullValue": null
+        },
+        "manual": {
+          "booleanValue": false
+        },
+        "title": {
+          "stringValue": "Test CLI3"
+        },
+        "ownerEmail": {
+          "nullValue": null
+        },
+        "eventId": {
+          "nullValue": null
+        },
+        "coverUrl": {
+          "nullValue": null
+        },
+        "weight": {
+          "stringValue": "N/D"
+        },
+        "players": {
+          "stringValue": "N/D"
+        },
+        "duration": {
+          "stringValue": "N/D"
+        },
+        "updatedAt": {
+          "timestampValue": "2025-10-02T21:42:31.018Z"
+        },
+        "titleLower": {
+          "stringValue": "test cli3"
+        },
+        "owner": {
+          "stringValue": "CLI"
+        },
+        "bggId": {
+          "integerValue": "997"
+        }
+      },
+      "createTime": "2025-10-02T21:42:31.037569Z",
+      "updateTime": "2025-10-02T21:42:31.037569Z"
+    }
+  ]
+}
+

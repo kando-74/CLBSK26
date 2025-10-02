@@ -268,6 +268,10 @@ export const checkWhitelist = onCall(async (request: CallableRequest<CheckWhitel
 });
 
 export const addLibraryEntry = onCall(async (request: CallableRequest<AddLibraryEntryPayload>) => {
+  logger.info('addLibraryEntry invoked', {
+    hasAuth: Boolean(request.auth?.uid),
+    payloadKeys: Object.keys(request.data ?? {}),
+  });
   const payload = request.data ?? {};
 
   const title = sanitizeString(payload.entry?.title ?? payload.manualTitle ?? payload.bggData?.name, "");
@@ -326,6 +330,7 @@ export const addLibraryEntry = onCall(async (request: CallableRequest<AddLibrary
     throw new HttpsError("internal", "No se pudo registrar el juego en la ludoteca.");
   }
 });
+
 
 
 
