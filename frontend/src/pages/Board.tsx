@@ -400,7 +400,7 @@ function FinishTableDialog({ table, pending, onConfirm, onDismiss }: FinishTable
   )
 }
 
-export function Board() {
+export const Board: React.FC = () => {
   const { user, profile, localAlias } = useAuth()
   const userDisplayName = useMemo(() => getDisplayName(profile, user, localAlias), [localAlias, profile, user])
   const { tables, loading, error, refresh, createTable, joinTable, startTable, completeTable } = useTablesService()
