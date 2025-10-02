@@ -1,25 +1,49 @@
-import { Link, Outlet, useLocation } from 'react-router-dom'
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import {
   CalendarDays,
   Home as HomeIcon,
   LibraryBig,
+  LogOut,
   Megaphone,
   PlusCircle,
   UserCircle2,
 } from 'lucide-react'
 import { LiveEventToasts } from './LiveEventToasts'
+import { useAuth } from './AuthProvider'
+import { getDisplayName } from '../utils/user'
 
 const navItems = [
   { label: 'Home', to: '/', icon: HomeIcon },
   { label: 'Ludoteca', to: '/ludoteca', icon: LibraryBig },
   { label: 'Registrar', to: '/registrar', icon: PlusCircle, isFab: true },
-  { label: 'TablÃ³n', to: '/tablon', icon: Megaphone },
+  { label: 'Tablón', to: '/tablon', icon: Megaphone },
   { label: 'Perfil', to: '/perfil', icon: UserCircle2 },
 ]
 
 export function AppShell() {
   const location = useLocation()
+  const navigate = useNavigate()
+  const { user, profile, localAlias, authorized, signOut } = useAuth()
+  const [switchingAccount, setSwitchingAccount] = useState(false)
+
+  const displayName = useMemo(
+    () => getDisplayName(profile, user, localAlias),
+    [localAlias, profile, user],
+  )
+  const emailLabel = user?.email ?? authorized?.displayName ?? 'Sin correo'
+  const roleLabel = authorized?.role ?? 'Participante'
+
+  async function handleSwitchAccount() {
+    setSwitchingAccount(true)
+    try {
+      await signOut()
+      navigate('/acceso')
+    } finally {
+      setSwitchingAccount(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background text-text-primary">
@@ -50,10 +74,24 @@ export function AppShell() {
               ))}
             </nav>
             <div className="flex items-center gap-3">
+              <div className="hidden text-right md:flex md:flex-col">
+                <span className="text-sm font-semibold text-text-primary">{displayName}</span>
+                <span className="text-xs text-text-secondary">{emailLabel}</span>
+                <span className="text-xs text-text-secondary">{roleLabel}</span>
+              </div>
               <span className="flex items-center gap-2 rounded-full bg-secondary/20 px-3 py-1 text-sm font-medium text-secondary">
                 <CalendarDays className="h-4 w-4" />
-                DÃ­a actual
+                Día actual
               </span>
+              <button
+                type="button"
+                onClick={handleSwitchAccount}
+                disabled={switchingAccount}
+                className="flex items-center gap-2 rounded-full border border-primary/20 px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:text-primary/60"
+              >
+                <LogOut className="h-4 w-4" />
+                {switchingAccount ? 'Cerrando…' : 'Cambiar usuario'}
+              </button>
               <Link
                 to="/organizacion"
                 className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
@@ -69,6 +107,21 @@ export function AppShell() {
         </main>
 
         <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-surface/95 px-4 pb-4 pt-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur md:hidden">
+          <div className="mb-2 flex items-center justify-between rounded-xl bg-background px-3 py-2 text-xs">
+            <div className="flex flex-col">
+              <span className="font-semibold text-text-primary">{displayName}</span>
+              <span className="text-[10px] text-text-secondary">{emailLabel}</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleSwitchAccount}
+              disabled={switchingAccount}
+              className="flex items-center gap-1 rounded-full border border-primary/30 px-3 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:text-primary/60"
+            >
+              <LogOut className="h-3 w-3" />
+              {switchingAccount ? 'Cerrando…' : 'Cambiar'}
+            </button>
+          </div>
           <ul className="relative flex items-center justify-between">
             {navItems.map(({ to, label, icon: Icon, isFab }) => {
               const isActive = location.pathname === to
