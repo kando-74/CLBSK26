@@ -1,0 +1,8 @@
+{
+  "name": "clbsk26-monorepo",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "functions"
+  ]
+}
