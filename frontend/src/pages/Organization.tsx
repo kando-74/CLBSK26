@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowDownToLine,
@@ -72,6 +72,35 @@ type ExportPreset = {
   label: string
   description: string
   size: string
+}
+
+async function copyToClipboard(text: string): Promise<void> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+
+  if (typeof document === 'undefined' || !document.body) {
+    throw new Error('El portapapeles no está disponible en este contexto.')
+  }
+
+  const input = document.createElement('textarea')
+  input.setAttribute('readonly', '')
+  input.value = text
+  input.style.position = 'fixed'
+  input.style.opacity = '0'
+  document.body.appendChild(input)
+
+  try {
+    input.select()
+    input.setSelectionRange(0, text.length)
+    const successful = document.execCommand('copy')
+    if (!successful) {
+      throw new Error('No se pudo acceder al portapapeles del navegador.')
+    }
+  } finally {
+    document.body.removeChild(input)
+  }
 }
 
 const initialAttendees: Attendee[] = [
@@ -650,18 +679,9 @@ export function Organization() {
 
   const handleSharePreset = useCallback(async (preset: ExportPreset) => {
     const shareUrl = `https://clbsk26.app/exports/${preset.id}`
-    try {
-      if (navigator.clipboard) {
-        await navigator.clipboard.writeText(shareUrl)
-      } else {
-        const tempInput = document.createElement('input')
-        tempInput.value = shareUrl
-        document.body.appendChild(tempInput)
-        tempInput.select()
-        document.execCommand('copy')
-        document.body.removeChild(tempInput)
-      }
 
+    try {
+      await copyToClipboard(shareUrl)
       setPanelMessage({ type: 'success', message: 'Enlace copiado al portapapeles.' })
     } catch (error) {
       setPanelMessage({
