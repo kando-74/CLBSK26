@@ -182,20 +182,69 @@ function coerceStringArray(value: unknown): string[] {
 }
 
 function coerceNumber(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
   }
 
-  if (typeof value === "string") {
+  if (typeof value === 'string') {
     const trimmed = value.trim().replace(',', '.');
     if (!trimmed) {
       return null;
     }
+
     const parsed = Number(trimmed);
     return Number.isFinite(parsed) ? parsed : null;
   }
 
   return null;
+}
+
+function extractNumbers(label: string): number[] {
+  return (label.match(/\d+(?:[\.,]\d+)?/g) ?? [])
+    .map((token) => Number(token.replace(',', '.')))
+    .filter((token) => Number.isFinite(token));
+}
+
+function deriveDurationMinutes(record: { durationMinutes?: number | null; duration?: string }): number | null {
+  if (typeof record.durationMinutes === 'number' && Number.isFinite(record.durationMinutes)) {
+    return record.durationMinutes;
+  }
+
+  if (!record.duration) {
+    return null;
+  }
+
+  const numericValues = extractNumbers(record.duration);
+  if (numericValues.length === 0) {
+    return null;
+  }
+
+  return Math.max(...numericValues);
+}
+
+function deriveWeightValue(record: { weightValue?: number | null; weight?: string }): number | null {
+  if (typeof record.weightValue === 'number' && Number.isFinite(record.weightValue)) {
+    return record.weightValue;
+  }
+
+  if (!record.weight) {
+    return null;
+  }
+
+  const numericValues = extractNumbers(record.weight);
+  if (numericValues.length === 0) {
+    return null;
+  }
+
+  return numericValues[0];
+}
+
+function withComputedMetrics(game: LibraryGameRecord): LibraryGameRecord {
+  return {
+    ...game,
+    durationMinutes: deriveDurationMinutes(game),
+    weightValue: deriveWeightValue(game),
+  };
 }
 
 function normalizeGameInput(input: LibraryGameInput): Required<LibraryGameInput> {
@@ -232,7 +281,7 @@ function mapFirestoreGame(id: string, data: FirestoreGame): LibraryGameRecord {
   const createdAt = data.createdAt;
   const updatedAt = data.updatedAt;
 
-  return {
+  return withComputedMetrics({
     id,
     title: coerceString(data.title, "Juego sin t�tulo"),
     owner: coerceString(data.owner, "Participante"),
@@ -262,7 +311,7 @@ function mapFirestoreGame(id: string, data: FirestoreGame): LibraryGameRecord {
         : typeof updatedAt?.toDate === "function"
           ? updatedAt.toDate().getTime()
           : null,
-  };
+  });
 }
 
 function resolveStorage(): Storage | null {
@@ -296,14 +345,15 @@ function readStoredGames(): LibraryGameRecord[] {
       return seedGames;
     }
 
-    return parsed
-      .map((item) => (typeof item === "object" && item ? (item as LibraryGameRecord) : null))
-      .filter(Boolean) as LibraryGameRecord[];
+    return (parsed
+      .map((item) => (typeof item === 'object' && item ? (item as LibraryGameRecord) : null))
+      .filter(Boolean) as LibraryGameRecord[]).map(withComputedMetrics);
   } catch (error) {
-    console.warn("No se pudieron leer los juegos locales", error);
+    console.warn('No se pudieron leer los juegos locales', error);
     return seedGames;
   }
 }
+
 
 function writeStoredGames(games: LibraryGameRecord[]) {
   const storage = resolveStorage();
@@ -408,7 +458,7 @@ async function createRemoteThroughFunction(game: Required<LibraryGameInput>): Pr
 
 function normalizeToRecord(game: Required<LibraryGameInput>): LibraryGameRecord {
   const now = Date.now();
-  return {
+  return withComputedMetrics({
     id: game.id,
     title: game.title,
     owner: game.owner,
@@ -428,7 +478,7 @@ function normalizeToRecord(game: Required<LibraryGameInput>): LibraryGameRecord 
     weightValue: game.weightValue ?? null,
     createdAt: now,
     updatedAt: now,
-  };
+  });
 }
 
 async function createLocalGame(game: Required<LibraryGameInput>): Promise<LibraryGameRecord> {
@@ -575,4 +625,91 @@ export async function fetchLibraryGames(): Promise<LibraryGameRecord[]> {
   }
 
   return fetchRemoteGames();
+}
+
+export type LibraryFilter = {
+  ownerIds?: string[];
+  ownerNames?: string[];
+  durationMin?: number | null;
+  durationMax?: number | null;
+  weightMin?: number | null;
+  weightMax?: number | null;
+  searchTerm?: string;
+};
+
+export type LibraryOwnerOption = {
+  value: string;
+  label: string;
+  ownerId: string | null;
+  count: number;
+};
+
+export function getLibraryOwnerOptions(games: LibraryGameRecord[]): LibraryOwnerOption[] {
+  const map = new Map<string, LibraryOwnerOption>();
+
+  games.forEach((game) => {
+    const label = game.owner || 'Sin propietario';
+    const key = game.ownerId ? `owner:${game.ownerId}` : `name:${label.toLowerCase()}`;
+    const current = map.get(key);
+
+    if (current) {
+      current.count += 1;
+    } else {
+      map.set(key, { value: key, label, ownerId: game.ownerId, count: 1 });
+    }
+  });
+
+  return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }));
+}
+
+export function applyLibraryFilters(games: LibraryGameRecord[], filter: LibraryFilter): LibraryGameRecord[] {
+  const ownersLower = (filter.ownerNames ?? []).map((name) => name.toLowerCase());
+  const searchTerm = filter.searchTerm?.trim().toLowerCase() ?? '';
+
+  return games.filter((game) => {
+    if (filter.ownerIds && filter.ownerIds.length > 0) {
+      if (!game.ownerId || !filter.ownerIds.includes(game.ownerId)) {
+        return false;
+      }
+    }
+
+    if (ownersLower.length > 0) {
+      if (!ownersLower.includes(game.owner.toLowerCase())) {
+        return false;
+      }
+    }
+
+    if (typeof filter.durationMin === 'number') {
+      if (game.durationMinutes === null || game.durationMinutes < filter.durationMin) {
+        return false;
+      }
+    }
+
+    if (typeof filter.durationMax === 'number') {
+      if (game.durationMinutes === null || game.durationMinutes > filter.durationMax) {
+        return false;
+      }
+    }
+
+    if (typeof filter.weightMin === 'number') {
+      if (game.weightValue === null || game.weightValue < filter.weightMin) {
+        return false;
+      }
+    }
+
+    if (typeof filter.weightMax === 'number') {
+      if (game.weightValue === null || game.weightValue > filter.weightMax) {
+        return false;
+      }
+    }
+
+    if (searchTerm) {
+      const haystack = `${game.title} ${game.owner} ${game.mechanics.join(' ')} ${game.language}`.toLowerCase();
+      if (!haystack.includes(searchTerm)) {
+        return false;
+      }
+    }
+
+    return true;
+  });
 }
