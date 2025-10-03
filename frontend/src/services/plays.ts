@@ -12,6 +12,7 @@ import {
   where,
   type QueryConstraint,
 } from 'firebase/firestore'
+import { FirebaseError } from 'firebase/app'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { db } from '../utils/firebase'
 
@@ -586,6 +587,10 @@ export type DuplicateMatch = {
   differenceMinutes: number
 }
 
+function isMissingIndexError(error: unknown): error is FirebaseError {
+  return error instanceof FirebaseError && error.code === 'failed-precondition'
+}
+
 function computeDuplicateMatches(
   source: PlayRecord[],
   duplicateQuery: DuplicateQuery,
@@ -635,8 +640,15 @@ function computeDuplicateMatches(
   return matches.sort((a, b) => a.differenceMinutes - b.differenceMinutes)
 }
 
-function buildDuplicateConstraints(normalizedGame: string): QueryConstraint[] {
-  return [where('gameLower', '==', normalizedGame), orderBy('recordedAt', 'desc'), limit(40)]
+function buildDuplicateConstraints(normalizedGame: string, options: { ordered?: boolean } = {}): QueryConstraint[] {
+  const constraints: QueryConstraint[] = [where('gameLower', '==', normalizedGame)]
+
+  if (options.ordered !== false) {
+    constraints.push(orderBy('recordedAt', 'desc'))
+  }
+
+  constraints.push(limit(40))
+  return constraints
 }
 
 export async function findPotentialDuplicates(duplicateQuery: DuplicateQuery): Promise<DuplicateMatch[]> {
@@ -647,10 +659,10 @@ export async function findPotentialDuplicates(duplicateQuery: DuplicateQuery): P
   }
 
   if (useFirestore && playsCollectionRef) {
+    const normalizedGame = duplicateQuery.game.trim().toLowerCase()
     try {
-      const normalizedGame = duplicateQuery.game.trim().toLowerCase()
-      const snapshot = await getDocs(query(playsCollectionRef, ...buildDuplicateConstraints(normalizedGame)))
-      const remotePlays = snapshot.docs.map((document) =>
+      const orderedSnapshot = await getDocs(query(playsCollectionRef, ...buildDuplicateConstraints(normalizedGame)))
+      const remotePlays = orderedSnapshot.docs.map((document) =>
         mapFirestorePlay(document.id, document.data() as Record<string, unknown>),
       )
 
@@ -658,7 +670,25 @@ export async function findPotentialDuplicates(duplicateQuery: DuplicateQuery): P
       const sanitized = mergeCachedPlays(remotePlays)
       return computeDuplicateMatches(sanitized, duplicateQuery, normalizedPlayers)
     } catch (error) {
-      console.error('No se pudieron buscar duplicados en Firestore, usando caché local', error)
+      if (isMissingIndexError(error)) {
+        console.warn('No se encontro el indice para duplicados, reintentando sin orden explicita.', error)
+        try {
+          const fallbackSnapshot = await getDocs(
+            query(playsCollectionRef, ...buildDuplicateConstraints(normalizedGame, { ordered: false })),
+          )
+          const remotePlays = fallbackSnapshot.docs.map((document) =>
+            mapFirestorePlay(document.id, document.data() as Record<string, unknown>),
+          )
+
+          remoteSourceInitialized = true
+          const sanitized = mergeCachedPlays(remotePlays)
+          return computeDuplicateMatches(sanitized, duplicateQuery, normalizedPlayers)
+        } catch (fallbackError) {
+          console.error('No se pudieron buscar duplicados en Firestore (modo alternativo). Usando cache local.', fallbackError)
+        }
+      } else {
+        console.error('No se pudieron buscar duplicados en Firestore, usando cache local', error)
+      }
     }
   }
 
@@ -684,24 +714,39 @@ export function subscribeDuplicatePlays(
   }
 
   const normalizedGame = duplicateQuery.game.trim().toLowerCase()
-  const duplicatesQuery = query(playsCollectionRef, ...buildDuplicateConstraints(normalizedGame))
+  let unsubscribe: () => void = () => {}
 
-  const unsubscribe = onSnapshot(
-    duplicatesQuery,
-    (snapshot) => {
-      const remotePlays = snapshot.docs.map((document) =>
-        mapFirestorePlay(document.id, document.data() as Record<string, unknown>),
-      )
+  const startSubscription = (ordered: boolean) => {
+    const duplicatesQuery = query(playsCollectionRef, ...buildDuplicateConstraints(normalizedGame, { ordered }))
+    const nextUnsubscribe = onSnapshot(
+      duplicatesQuery,
+      (snapshot) => {
+        const remotePlays = snapshot.docs.map((document) =>
+          mapFirestorePlay(document.id, document.data() as Record<string, unknown>),
+        )
 
-      remoteSourceInitialized = true
-      const sanitized = mergeCachedPlays(remotePlays)
-      onUpdate(computeDuplicateMatches(sanitized, duplicateQuery, normalizedPlayers))
-    },
-    (error) => {
-      console.error('No se pudieron escuchar duplicados en tiempo real', error)
-      onError?.('No se pudieron actualizar los duplicados en tiempo real. Revisa tu conexión.')
-    },
-  )
+        remoteSourceInitialized = true
+        const sanitized = mergeCachedPlays(remotePlays)
+        onUpdate(computeDuplicateMatches(sanitized, duplicateQuery, normalizedPlayers))
+      },
+      (error) => {
+        if (ordered && isMissingIndexError(error)) {
+          console.warn('No se encontro el indice para duplicados en tiempo real. Reintentando sin orden.', error)
+          nextUnsubscribe()
+          startSubscription(false)
+          onUpdate(computeDuplicateMatches(getCachedPlays(), duplicateQuery, normalizedPlayers))
+          return
+        }
+
+        console.error('No se pudieron escuchar duplicados en tiempo real', error)
+        onError?.('No se pudieron actualizar los duplicados en tiempo real. Revisa tu conexion.')
+      },
+    )
+
+    unsubscribe = nextUnsubscribe
+  }
+
+  startSubscription(true)
 
   return () => {
     unsubscribe()

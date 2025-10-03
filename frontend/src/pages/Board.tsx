@@ -353,7 +353,10 @@ function FinishTableDialog({ table, pending, onConfirm, onDismiss }: FinishTable
             <span className="text-xs uppercase tracking-wide text-text-secondary">Resumen del resultado</span>
             <textarea
               value={result}
-              onChange={(event) => setResult(event.currentTarget.value)}
+              onChange={(event) => {
+                const { value } = event.currentTarget
+                setResult(value)
+              }}
               placeholder="Ej. Ana gana por 3 puntos tras una última ronda épica."
               className="h-20 w-full resize-none rounded-2xl border border-primary/20 bg-background px-4 py-2 text-sm text-text-secondary outline-none focus:border-primary focus:text-text-primary"
             />
@@ -365,12 +368,13 @@ function FinishTableDialog({ table, pending, onConfirm, onDismiss }: FinishTable
                 <span className="text-xs font-semibold uppercase tracking-wide text-text-secondary/80">{player}</span>
                 <textarea
                   value={chronicles[player] ?? ''}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const { value } = event.currentTarget
                     setChronicles((current) => ({
                       ...current,
-                      [player]: event.currentTarget.value,
+                      [player]: value,
                     }))
-                  }
+                  }}
                   placeholder="Añade cómo fue la partida desde tu punto de vista"
                   className="h-20 w-full resize-none bg-transparent text-sm text-text-secondary outline-none"
                 />
