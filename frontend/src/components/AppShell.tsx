@@ -9,6 +9,7 @@ import {
   Megaphone,
   PlusCircle,
   UserCircle2,
+  Users,
 } from 'lucide-react'
 import { LiveEventToasts } from './LiveEventToasts'
 import { useAuth } from './AuthProvider'
@@ -19,6 +20,7 @@ const navItems = [
   { label: 'Ludoteca', to: '/ludoteca', icon: LibraryBig },
   { label: 'Registrar', to: '/registrar', icon: PlusCircle, isFab: true },
   { label: 'Tablón', to: '/tablon', icon: Megaphone },
+  { label: 'Usuarios', to: '/usuarios', icon: Users },
   { label: 'Perfil', to: '/perfil', icon: UserCircle2 },
 ]
 

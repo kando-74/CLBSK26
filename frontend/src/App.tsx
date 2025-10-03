@@ -9,6 +9,7 @@ import { Statistics } from './pages/Statistics'
 import { Access } from './pages/Access'
 import { Organization } from './pages/Organization'
 import { UserProfilePublic } from './pages/UserProfilePublic'
+import { UsersDirectory } from './pages/Users'
 import { RequireAuth } from './components/RequireAuth'
 
 function App() {
@@ -22,6 +23,7 @@ function App() {
           <Route path="/registrar" element={<Register />} />
           <Route path="/estadisticas" element={<Statistics />} />
           <Route path="/tablon" element={<Board />} />
+          <Route path="/usuarios" element={<UsersDirectory />} />
           <Route path="/perfil" element={<Profile />} />
           <Route path="/personas/:alias" element={<UserProfilePublic />} />
           <Route path="/organizacion" element={<Organization />} />
