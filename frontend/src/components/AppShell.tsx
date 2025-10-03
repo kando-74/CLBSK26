@@ -1,4 +1,4 @@
-import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
+ï»¿import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import {
@@ -18,8 +18,8 @@ import { getDisplayName } from '../utils/user'
 const navItems = [
   { label: 'Home', to: '/', icon: HomeIcon },
   { label: 'Ludoteca', to: '/ludoteca', icon: LibraryBig },
-  { label: 'Registrar', to: '/registrar', icon: PlusCircle, isFab: true },
-  { label: 'Tablón', to: '/tablon', icon: Megaphone },
+  { label: 'Registrar', to: '/registrar', icon: PlusCircle },
+  { label: 'Tabl\u00f3n', to: '/tablon', icon: Megaphone },
   { label: 'Usuarios', to: '/usuarios', icon: Users },
   { label: 'Perfil', to: '/perfil', icon: UserCircle2 },
 ]
@@ -58,16 +58,15 @@ export function AppShell() {
               <h1 className="text-2xl font-semibold text-text-primary">Congreso Juegos de Mesa</h1>
             </div>
             <nav className="flex gap-2">
-              {navItems.map(({ to, label, icon: Icon, isFab }) => (
+              {navItems.map(({ to, label, icon: Icon }) => (
                 <Link
                   key={to}
                   to={to}
                   className={clsx(
                     'flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors',
-                    isFab
-                      ? 'bg-primary text-white shadow-card hover:bg-primary/90'
+                    location.pathname === to
+                      ? 'bg-primary/10 text-primary'
                       : 'text-text-secondary hover:bg-primary/10',
-                    location.pathname === to && !isFab && 'bg-primary/10 text-primary',
                   )}
                 >
                   <Icon className="h-4 w-4" />
@@ -83,7 +82,7 @@ export function AppShell() {
               </div>
               <span className="flex items-center gap-2 rounded-full bg-secondary/20 px-3 py-1 text-sm font-medium text-secondary">
                 <CalendarDays className="h-4 w-4" />
-                Día actual
+                D\u00eda actual
               </span>
               <button
                 type="button"
@@ -92,7 +91,7 @@ export function AppShell() {
                 className="flex items-center gap-2 rounded-full border border-primary/20 px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:text-primary/60"
               >
                 <LogOut className="h-4 w-4" />
-                {switchingAccount ? 'Cerrando…' : 'Cambiar usuario'}
+                {switchingAccount ? 'Cerrando...' : 'Cambiar usuario'}
               </button>
               <Link
                 to="/organizacion"
@@ -121,26 +120,12 @@ export function AppShell() {
               className="flex items-center gap-1 rounded-full border border-primary/30 px-3 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:text-primary/60"
             >
               <LogOut className="h-3 w-3" />
-              {switchingAccount ? 'Cerrando…' : 'Cambiar'}
+              {switchingAccount ? 'Cerrando...' : 'Cambiar'}
             </button>
           </div>
-          <ul className="relative flex items-center justify-between">
-            {navItems.map(({ to, label, icon: Icon, isFab }) => {
+          <ul className="flex items-center justify-between">
+            {navItems.map(({ to, label, icon: Icon }) => {
               const isActive = location.pathname === to
-              if (isFab) {
-                return (
-                  <li key={to} className="absolute left-1/2 -translate-x-1/2">
-                    <Link
-                      to={to}
-                      className="flex h-16 w-16 items-center justify-center rounded-full bg-primary text-white shadow-card transition-transform duration-200 hover:-translate-y-1"
-                      aria-label={label}
-                    >
-                      <Icon className="h-7 w-7" />
-                    </Link>
-                  </li>
-                )
-              }
-
               return (
                 <li key={to}>
                   <Link
@@ -162,3 +147,4 @@ export function AppShell() {
     </div>
   )
 }
+

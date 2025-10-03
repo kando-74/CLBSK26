@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+﻿import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   BookmarkCheck,
   CalendarCheck,
@@ -170,11 +170,11 @@ export function Library() {
       setBggResults(results.slice(0, 10))
 
       if (results.length === 0) {
-        setBggError('No se encontraron juegos en BGG para esa búsqueda.')
+        setBggError('No se encontraron juegos en BGG para esa bÃºsqueda.')
       }
     } catch (error) {
       setBggResults([])
-      setBggError(error instanceof Error ? error.message : 'No se pudo completar la búsqueda en BGG.')
+      setBggError(error instanceof Error ? error.message : 'No se pudo completar la bÃºsqueda en BGG.')
     } finally {
       setIsSearchingBgg(false)
     }
@@ -243,7 +243,7 @@ export function Library() {
       const result = await addGame(input)
 
       if (result.status === 'already-exists') {
-        setImportMessage({ type: 'error', message: 'El juego ya está en la ludoteca.' })
+        setImportMessage({ type: 'error', message: 'El juego ya estÃ¡ en la ludoteca.' })
       } else if (result.status === 'error') {
         setImportMessage({ type: 'error', message: result.message })
       } else {
@@ -338,7 +338,7 @@ export function Library() {
             className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
           >
             <Star className="h-4 w-4" />
-            Añadir juego
+            AÃ±adir juego
           </button>
         </div>
         <div className="card space-y-3 p-4">
@@ -348,7 +348,7 @@ export function Library() {
               <input
                 value={search}
                 onChange={(event) => setSearch(event.currentTarget.value)}
-                placeholder="Buscar por título, propietario o mecánica"
+                placeholder="Buscar por tÃ­tulo, propietario o mecÃ¡nica"
                 className="w-full bg-transparent text-sm text-text-primary outline-none placeholder:text-text-secondary"
               />
             </label>
@@ -379,7 +379,7 @@ export function Library() {
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <label className="flex flex-col gap-1 text-xs text-text-secondary">
-              Duración mínima (min)
+              DuraciÃ³n mÃ­nima (min)
               <input
                 type="number"
                 min={0}
@@ -389,7 +389,7 @@ export function Library() {
               />
             </label>
             <label className="flex flex-col gap-1 text-xs text-text-secondary">
-              Duración máxima (min)
+              DuraciÃ³n mÃ¡xima (min)
               <input
                 type="number"
                 min={0}
@@ -399,7 +399,7 @@ export function Library() {
               />
             </label>
             <label className="flex flex-col gap-1 text-xs text-text-secondary">
-              Peso mínimo BGG
+              Peso mÃ­nimo BGG
               <input
                 type="number"
                 step="0.1"
@@ -411,7 +411,7 @@ export function Library() {
               />
             </label>
             <label className="flex flex-col gap-1 text-xs text-text-secondary">
-              Peso máximo BGG
+              Peso mÃ¡ximo BGG
               <input
                 type="number"
                 step="0.1"
@@ -441,7 +441,7 @@ export function Library() {
         <section className="card space-y-3 p-5">
           <h3 className="text-lg font-semibold text-text-primary">No hay juegos que coincidan</h3>
           <p className="text-sm text-text-secondary">
-            Ajusta los filtros o importa nuevos títulos desde BoardGameGeek para ampliar la ludoteca.
+            Ajusta los filtros o importa nuevos tÃ­tulos desde BoardGameGeek para ampliar la ludoteca.
           </p>
         </section>
       ) : (
@@ -450,9 +450,9 @@ export function Library() {
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-text-secondary">
               <tr>
                 <th className="px-4 py-3 font-semibold">Juego</th>
-                <th className="px-4 py-3 font-semibold">Año</th>
+                <th className="px-4 py-3 font-semibold">AÃ±o</th>
                 <th className="px-4 py-3 font-semibold hidden md:table-cell">Propietario</th>
-                <th className="px-4 py-3 font-semibold hidden md:table-cell">Duración (min)</th>
+                <th className="px-4 py-3 font-semibold hidden md:table-cell">DuraciÃ³n (min)</th>
                 <th className="px-4 py-3 font-semibold hidden md:table-cell">Peso BGG</th>
               </tr>
             </thead>
@@ -486,7 +486,7 @@ export function Library() {
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-text-primary">Proponer mesa</h3>
-                <p className="text-sm text-text-secondary">Configura los datos para abrir una mesa pública de {tableDraft.game.title}.</p>
+                <p className="text-sm text-text-secondary">Configura los datos para abrir una mesa pÃºblica de {tableDraft.game.title}.</p>
               </div>
               <button onClick={handleCloseTable} className="text-sm font-semibold text-primary">
                 Cerrar
@@ -525,7 +525,7 @@ export function Library() {
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                Descripción
+                DescripciÃ³n
                 <textarea
                   value={tableDraft.description}
                   onChange={(event) => setTableDraft((current) => ({ ...current, description: event.currentTarget.value }))}
@@ -580,7 +580,7 @@ export function Library() {
                 <div key={result.id} className="flex flex-col items-start gap-2 rounded-xl border border-slate-200 px-4 py-3 md:flex-row md:items-center md:justify-between">
                   <div>
                     <p className="text-sm font-semibold text-text-primary">{result.name}</p>
-                    <p className="text-xs text-text-secondary">BGG #{result.id} {result.yearPublished ? `• ${result.yearPublished}` : ''}</p>
+                    <p className="text-xs text-text-secondary">BGG #{result.id} {result.yearPublished ? `â€¢ ${result.yearPublished}` : ''}</p>
                   </div>
                   <button
                     onClick={() => handleImport(result.id, result.yearPublished)}
@@ -606,7 +606,7 @@ export function Library() {
         )}
       </section>
       {selectedGame && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/50 px-4">
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/50 px-4">
           <div className="w-full max-w-3xl space-y-4 rounded-2xl bg-surface p-6 shadow-card">
             <div className="flex items-start justify-between">
               <div>
@@ -624,17 +624,17 @@ export function Library() {
                 <p className="text-base text-text-primary">{selectedGame.players}</p>
               </div>
               <div className="rounded-xl bg-background px-3 py-2 text-sm text-text-secondary">
-                <p className="text-xs uppercase tracking-wide">Duración</p>
+                <p className="text-xs uppercase tracking-wide">DuraciÃ³n</p>
                 <p className="text-base text-text-primary">
                   {selectedGame.duration}
-                  {selectedGame.durationMinutes ? ` • ${selectedGame.durationMinutes} min` : ''}
+                  {selectedGame.durationMinutes ? ` â€¢ ${selectedGame.durationMinutes} min` : ''}
                 </p>
               </div>
               <div className="rounded-xl bg-background px-3 py-2 text-sm text-text-secondary">
                 <p className="text-xs uppercase tracking-wide">Peso BGG</p>
                 <p className="text-base text-text-primary">
                   {selectedGame.weight}
-                  {selectedGame.weightValue ? ` • ${selectedGame.weightValue.toFixed(1)}` : ''}
+                  {selectedGame.weightValue ? ` â€¢ ${selectedGame.weightValue.toFixed(1)}` : ''}
                 </p>
               </div>
               <div className="rounded-xl bg-background px-3 py-2 text-sm text-text-secondary">
@@ -682,3 +682,4 @@ export function Library() {
     </div>
   )
 }
+
