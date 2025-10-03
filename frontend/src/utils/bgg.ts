@@ -92,6 +92,7 @@ export interface BggGameDetails {
   mechanics: string[]
   thumbnailUrl?: string
   imageUrl?: string
+  yearPublished?: number
 }
 
 export async function searchBoardGames(query: string): Promise<BggSearchResult[]> {
@@ -136,6 +137,7 @@ export async function getBoardGameDetails(id: number): Promise<BggGameDetails> {
   const averageWeight = Number(
     getAttribute(item.querySelector('statistics ratings averageweight'), 'value') ?? 0,
   )
+  const yearPublished = Number(getAttribute(item.querySelector('yearpublished'), 'value') ?? 0)
   const mechanics = Array.from(item.querySelectorAll('link[type="boardgamemechanic"]'))
     .map((node) => getAttribute(node, 'value'))
     .filter((value): value is string => Boolean(value))
@@ -157,5 +159,6 @@ export async function getBoardGameDetails(id: number): Promise<BggGameDetails> {
     mechanics,
     thumbnailUrl: getTextContent(item.querySelector('thumbnail')) ?? undefined,
     imageUrl: getTextContent(item.querySelector('image')) ?? undefined,
+    yearPublished: Number.isFinite(yearPublished) && yearPublished > 0 ? yearPublished : undefined,
   }
 }
