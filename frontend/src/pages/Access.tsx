@@ -14,10 +14,11 @@ import {
   Sparkles,
   UserRound,
 } from 'lucide-react'
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth'
+import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth'
 import { doc, getDoc, serverTimestamp, setDoc, type DocumentData } from 'firebase/firestore'
 import { auth, db } from '../utils/firebase'
 import { useAuth } from '../components/AuthProvider'
+import type { WhitelistStatus } from '../services/whitelist'
 
 const onboardingSteps = [
   {
@@ -51,6 +52,7 @@ type AuthorizedEntry = {
   email: string
   role?: string
   displayName?: string
+  status?: WhitelistStatus
 }
 
 const SUPPORT_EMAIL = 'soporte@juegoscongreso.com'
@@ -75,6 +77,8 @@ export function Access() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [authorizedEntry, setAuthorizedEntry] = useState<AuthorizedEntry | null>(null)
   const [profilePrefilled, setProfilePrefilled] = useState(false)
+  const [resetStatus, setResetStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+  const [resetError, setResetError] = useState<string | null>(null)
 
   const activeIndex = onboardingSteps.findIndex((step) => step.key === currentStep)
   const activeStep = onboardingSteps[activeIndex]
@@ -122,6 +126,14 @@ export function Access() {
 
         if (!cancelled) {
           setAuthorizedEntry(entry)
+        }
+
+        if (entry.status === 'revoked') {
+          throw new Error('Tu acceso ha sido revocado por la organización. Si crees que es un error, contacta con el equipo.')
+        }
+
+        if (entry.status === 'pending') {
+          throw new Error('Tu invitación todavía está pendiente de aprobación. Vuelve a intentarlo cuando la organización la active.')
         }
 
         // 2. Si está autorizado, intentar el login o crear el usuario
@@ -194,6 +206,11 @@ export function Access() {
   }, [showLoginErrors, canSubmitLogin])
 
   useEffect(() => {
+    setResetStatus('idle')
+    setResetError(null)
+  }, [normalizedEmail])
+
+  useEffect(() => {
     if (currentStep !== 'profile') {
       setProfileSaved(false)
       setProfilePrefilled(false)
@@ -225,6 +242,30 @@ export function Access() {
   useEffect(() => {
     setProfileSaved(false)
   }, [alias, fullName, language, consent])
+
+  async function handlePasswordReset() {
+    if (!isEmailValid) {
+      setShowLoginErrors(true)
+      setResetStatus('error')
+      setResetError('Introduce un correo válido antes de solicitar el reinicio de contraseña.')
+      return
+    }
+
+    try {
+      setResetStatus('sending')
+      setResetError(null)
+      await sendPasswordResetEmail(auth, normalizedEmail)
+      setResetStatus('sent')
+    } catch (error) {
+      const mapped = mapAuthError(error)
+      setResetStatus('error')
+      if (mapped.code === 'auth/user-not-found') {
+        setResetError('Aún no existe una cuenta con este correo. Completa el registro creando tu contraseña.')
+      } else {
+        setResetError(mapped.message)
+      }
+    }
+  }
 
   const handleStart = () => {
     setCurrentStep('login')
@@ -377,6 +418,20 @@ export function Access() {
             {showLoginErrors && !isPasswordValid && (
               <p className="text-sm text-error">La contraseña debe tener al menos 8 caracteres.</p>
             )}
+          </div>
+          <div className="space-y-1 text-xs text-text-secondary">
+            <button
+              type="button"
+              onClick={handlePasswordReset}
+              className="text-xs font-semibold text-primary hover:underline"
+              disabled={resetStatus === 'sending'}
+            >
+              {resetStatus === 'sending' ? 'Enviando enlace de recuperación…' : '¿Olvidaste tu contraseña?'}
+            </button>
+            {resetStatus === 'sent' && (
+              <p className="text-text-secondary">Te enviamos un correo con instrucciones para restablecerla.</p>
+            )}
+            {resetStatus === 'error' && resetError && <p className="text-error">{resetError}</p>}
           </div>
           <button
             type="submit"
@@ -583,6 +638,7 @@ function mapAuthorizedEntry(email: string, data: DocumentData | undefined): Auth
     email,
     role: data?.role ?? undefined,
     displayName: data?.displayName ?? undefined,
+    status: typeof data?.status === 'string' ? (data.status as WhitelistStatus) : undefined,
   }
 }
 

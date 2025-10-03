@@ -29,6 +29,9 @@ export type LibraryGameRecord = {
   manual: boolean;
   bggId: number | null;
   eventId: string | null;
+  yearPublished: number | null;
+  durationMinutes: number | null;
+  weightValue: number | null;
   createdAt: number | null;
   updatedAt: number | null;
 };
@@ -48,6 +51,9 @@ export type LibraryGameInput = {
   manual?: boolean;
   bggId?: number | null;
   eventId?: string | null;
+  yearPublished?: number | null;
+  durationMinutes?: number | null;
+  weightValue?: number | null;
 };
 
 export type LibraryActionStatus = "success" | "already-exists" | "error";
@@ -71,6 +77,9 @@ type FirestoreGame = {
   manual?: boolean;
   bggId?: number | null;
   eventId?: string | null;
+  yearPublished?: number | null;
+  durationMinutes?: number | null;
+  weightValue?: number | null;
   createdAt?: { toDate?: () => Date } | number | null;
   updatedAt?: { toDate?: () => Date } | number | null;
 };
@@ -97,6 +106,9 @@ const seedGames: LibraryGameRecord[] = [
     manual: false,
     bggId: 224517,
     eventId: "main-event",
+    yearPublished: 2018,
+    durationMinutes: 120,
+    weightValue: 3.9,
     createdAt: Date.now() - 1000 * 60 * 60 * 24,
     updatedAt: Date.now() - 1000 * 60 * 60 * 12,
   },
@@ -116,6 +128,9 @@ const seedGames: LibraryGameRecord[] = [
     manual: false,
     bggId: 366013,
     eventId: "main-event",
+    yearPublished: 2022,
+    durationMinutes: 60,
+    weightValue: 2.9,
     createdAt: Date.now() - 1000 * 60 * 80,
     updatedAt: Date.now() - 1000 * 60 * 40,
   },
@@ -135,6 +150,9 @@ const seedGames: LibraryGameRecord[] = [
     manual: true,
     bggId: 295947,
     eventId: "main-event",
+    yearPublished: 2021,
+    durationMinutes: 45,
+    weightValue: 1.9,
     createdAt: Date.now() - 1000 * 60 * 20,
     updatedAt: Date.now() - 1000 * 60 * 10,
   },
@@ -163,6 +181,23 @@ function coerceStringArray(value: unknown): string[] {
     .slice(0, 16);
 }
 
+function coerceNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim().replace(',', '.');
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
 function normalizeGameInput(input: LibraryGameInput): Required<LibraryGameInput> {
   const id = coerceString(
     input.id ?? (input.bggId ? `bgg-${input.bggId}` : `manual-${Date.now()}`),
@@ -184,6 +219,12 @@ function normalizeGameInput(input: LibraryGameInput): Required<LibraryGameInput>
     manual: Boolean(input.manual ?? !input.bggId),
     bggId: input.bggId ?? null,
     eventId: input.eventId ?? "main-event",
+    yearPublished:
+      typeof input.yearPublished === "number" && Number.isFinite(input.yearPublished)
+        ? Math.trunc(input.yearPublished)
+        : null,
+    durationMinutes: coerceNumber(input.durationMinutes ?? null),
+    weightValue: coerceNumber(input.weightValue ?? null),
   };
 }
 
@@ -206,6 +247,9 @@ function mapFirestoreGame(id: string, data: FirestoreGame): LibraryGameRecord {
     manual: Boolean(data.manual ?? !data.bggId),
     bggId: typeof data.bggId === "number" ? data.bggId : null,
     eventId: coerceString(data.eventId ?? null, "") || null,
+    yearPublished: typeof data.yearPublished === "number" ? data.yearPublished : null,
+    durationMinutes: coerceNumber(data.durationMinutes ?? null),
+    weightValue: coerceNumber(data.weightValue ?? null),
     createdAt:
       typeof createdAt === "number"
         ? createdAt
@@ -301,6 +345,9 @@ async function createRemoteGame(game: Required<LibraryGameInput>): Promise<Libra
     manual: game.manual,
     bggId: game.bggId ?? null,
     eventId: game.eventId ?? null,
+    yearPublished: game.yearPublished ?? null,
+    durationMinutes: game.durationMinutes ?? null,
+    weightValue: game.weightValue ?? null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -327,6 +374,9 @@ async function createRemoteThroughFunction(game: Required<LibraryGameInput>): Pr
         manual: game.manual,
         bggId: game.bggId,
         eventId: game.eventId,
+        yearPublished: game.yearPublished,
+        durationMinutes: game.durationMinutes,
+        weightValue: game.weightValue,
       },
     });
 
@@ -373,6 +423,9 @@ function normalizeToRecord(game: Required<LibraryGameInput>): LibraryGameRecord 
     manual: game.manual,
     bggId: game.bggId ?? null,
     eventId: game.eventId ?? null,
+    yearPublished: game.yearPublished ?? null,
+    durationMinutes: game.durationMinutes ?? null,
+    weightValue: game.weightValue ?? null,
     createdAt: now,
     updatedAt: now,
   };

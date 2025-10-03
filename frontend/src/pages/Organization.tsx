@@ -28,6 +28,7 @@ import {
 } from '../services/activity'
 import { listActivePlays, summarizeRoomOccupancy, type PlayRecord, type RoomOccupancySummary } from '../services/plays'
 import { UserLink } from '../components/UserLink'
+import { useWhitelistManagement, type WhitelistEntryRecord } from '../services/whitelist'
 
 type PanelTab = 'attendees' | 'whitelist' | 'duplicates' | 'exports'
 
@@ -56,6 +57,8 @@ type WhitelistEntry = {
   status: WhitelistStatus
   invitedBy: string
   updatedAt: string
+  displayName?: string | null
+  notes?: string | null
 }
 
 type DuplicateAlert = {
@@ -72,6 +75,57 @@ type ExportPreset = {
   label: string
   description: string
   size: string
+}
+
+function formatRelativeMoment(date: Date | null): string {
+  if (!date) {
+    return 'Sin registros'
+  }
+
+  const now = Date.now()
+  const timestamp = date.getTime()
+  const diffMs = Math.max(0, now - timestamp)
+  const diffMinutes = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMinutes / 60)
+  const diffDays = Math.floor(diffHours / 24)
+
+  if (diffMinutes < 1) {
+    return 'Hace unos segundos'
+  }
+  if (diffMinutes < 60) {
+    return `Hace ${diffMinutes} min`
+  }
+  if (diffHours < 24) {
+    return `Hoy · ${date.toLocaleTimeString('es-ES', {
+      hour: '2-digit',
+      minute: '2-digit',
+    })}`
+  }
+  if (diffDays === 1) {
+    return `Ayer · ${date.toLocaleTimeString('es-ES', {
+      hour: '2-digit',
+      minute: '2-digit',
+    })}`
+  }
+
+  return date.toLocaleDateString('es-ES', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function mapWhitelistRecordToEntry(record: WhitelistEntryRecord): WhitelistEntry {
+  return {
+    email: record.email,
+    role: record.role,
+    status: record.status,
+    invitedBy: record.invitedBy ?? 'Organización',
+    updatedAt: formatRelativeMoment(record.updatedAt),
+    displayName: record.displayName ?? null,
+    notes: record.notes ?? null,
+  }
 }
 
 async function copyToClipboard(text: string): Promise<void> {
@@ -143,37 +197,6 @@ const initialAttendees: Attendee[] = [
     games: 1,
     plays: 3,
     lastActive: 'Sin actividad registrada',
-  },
-]
-
-const initialWhitelistEntries: WhitelistEntry[] = [
-  {
-    email: 'eva.martinez@example.com',
-    role: 'asistente',
-    status: 'approved',
-    invitedBy: 'Alejandro',
-    updatedAt: 'Hoy · 11:05',
-  },
-  {
-    email: 'staff.sala3@example.com',
-    role: 'staff',
-    status: 'pending',
-    invitedBy: 'Lucía',
-    updatedAt: 'Hoy · 09:32',
-  },
-  {
-    email: 'marina@prototypegames.com',
-    role: 'asistente',
-    status: 'approved',
-    invitedBy: 'Patricio',
-    updatedAt: 'Ayer · 19:18',
-  },
-  {
-    email: 'carlos.suarez@example.com',
-    role: 'asistente',
-    status: 'revoked',
-    invitedBy: 'Organización',
-    updatedAt: 'Hace 3 días',
   },
 ]
 
@@ -342,7 +365,6 @@ export function Organization() {
   const [activeTab, setActiveTab] = useState<PanelTab>('attendees')
   const [attendeeList] = useState<Attendee[]>(initialAttendees)
   const [attendeeSearch, setAttendeeSearch] = useState('')
-  const [whitelistList, setWhitelistList] = useState<WhitelistEntry[]>(initialWhitelistEntries)
   const [duplicateList, setDuplicateList] = useState<DuplicateAlert[]>(initialDuplicateAlerts)
   const [activityLogs, setActivityLogs] = useState<ActivityLogRecord[]>([])
   const [activityError, setActivityError] = useState<string | null>(null)
@@ -354,6 +376,14 @@ export function Organization() {
     email: '',
     role: 'asistente',
   })
+  const {
+    entries: whitelistEntries,
+    loading: whitelistLoading,
+    error: whitelistError,
+    addEntry: addWhitelistEntry,
+    updateEntry: updateWhitelistEntry,
+  } = useWhitelistManagement()
+  const whitelistList = useMemo(() => whitelistEntries.map(mapWhitelistRecordToEntry), [whitelistEntries])
   const [processingExport, setProcessingExport] = useState<string | null>(null)
   const [selectedAttendee, setSelectedAttendee] = useState<Attendee | null>(null)
   const [activePlays, setActivePlays] = useState<PlayRecord[]>([])
@@ -552,7 +582,7 @@ export function Organization() {
   }, [addAuditEntry, attendeeList, day.label])
 
   const handleInviteSubmit = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
+    async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault()
       const email = inviteForm.email.trim().toLowerCase()
 
@@ -566,52 +596,52 @@ export function Organization() {
         return
       }
 
-      const newEntry: WhitelistEntry = {
-        email,
-        role: inviteForm.role,
-        status: 'pending',
-        invitedBy: 'Organización',
-        updatedAt: 'Hace unos segundos',
+      try {
+        await addWhitelistEntry({ email, role: inviteForm.role })
+        setInviteForm({ email: '', role: inviteForm.role })
+        setInviteModalOpen(false)
+        setPanelMessage({ type: 'success', message: `Invitación enviada a ${email}.` })
+        addAuditEntry(`Se invitó a ${email}.`)
+      } catch (error) {
+        console.error('No se pudo registrar la invitación en la whitelist', error)
+        setPanelMessage({
+          type: 'error',
+          message: error instanceof Error ? error.message : 'No se pudo registrar el correo en la whitelist.',
+        })
       }
-
-      setWhitelistList((current) => [newEntry, ...current])
-      setInviteForm({ email: '', role: inviteForm.role })
-      setInviteModalOpen(false)
-      setPanelMessage({ type: 'success', message: `Invitación enviada a ${email}.` })
-      addAuditEntry(`Se invitó a ${email}.`)
     },
-    [addAuditEntry, inviteForm, whitelistList],
+    [addAuditEntry, addWhitelistEntry, inviteForm.role, inviteForm.email, whitelistList],
   )
 
-  const handleResendInvitation = useCallback(
-    (email: string) => {
-      setWhitelistList((current) =>
-        current.map((entry) =>
-          entry.email === email
-            ? { ...entry, status: entry.status === 'revoked' ? 'pending' : entry.status, updatedAt: 'Hace unos segundos' }
-            : entry,
-        ),
-      )
+  const handleResendInvitation = useCallback(async (email: string) => {
+    try {
+      const current = whitelistList.find((entry) => entry.email === email)
+      const nextStatus = current?.status === 'revoked' ? 'pending' : current?.status
+      await updateWhitelistEntry({ email, status: nextStatus })
       setPanelMessage({ type: 'info', message: `Invitación reenviada a ${email}.` })
       addAuditEntry(`Se reenviaron credenciales a ${email}.`)
-    },
-    [addAuditEntry],
-  )
+    } catch (error) {
+      console.error('No se pudo reenviar la invitación', error)
+      setPanelMessage({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'No se pudo reenviar la invitación en este momento.',
+      })
+    }
+  }, [addAuditEntry, updateWhitelistEntry, whitelistList])
 
-  const handleRestoreAccess = useCallback(
-    (email: string) => {
-      setWhitelistList((current) =>
-        current.map((entry) =>
-          entry.email === email
-            ? { ...entry, status: 'approved', updatedAt: 'Hace unos segundos' }
-            : entry,
-        ),
-      )
+  const handleRestoreAccess = useCallback(async (email: string) => {
+    try {
+      await updateWhitelistEntry({ email, status: 'approved' })
       setPanelMessage({ type: 'success', message: `Acceso restaurado para ${email}.` })
       addAuditEntry(`Se restauró el acceso de ${email}.`)
-    },
-    [addAuditEntry],
-  )
+    } catch (error) {
+      console.error('No se pudo restaurar el acceso', error)
+      setPanelMessage({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'No se pudo restaurar el acceso en este momento.',
+      })
+    }
+  }, [addAuditEntry, updateWhitelistEntry])
 
   const handleUpdateDuplicate = useCallback(
     (id: string, status: DuplicateStatus, customMessage?: string) => {
@@ -818,7 +848,10 @@ export function Organization() {
                   className="w-full bg-transparent text-sm text-text-primary outline-none placeholder:text-text-secondary"
                   placeholder="Buscar por alias o email"
                   value={attendeeSearch}
-                  onChange={(event) => setAttendeeSearch(event.currentTarget.value)}
+                  onChange={(event) => {
+                    const { value } = event.currentTarget
+                    setAttendeeSearch(value)
+                  }}
                 />
               </label>
               <div className="flex flex-wrap gap-2">
@@ -922,6 +955,14 @@ export function Organization() {
 
         {activeTab === 'whitelist' && (
           <div className="space-y-3">
+            {whitelistLoading && (
+              <p className="text-sm text-text-secondary">Sincronizando la whitelist…</p>
+            )}
+            {whitelistError && (
+              <p className="rounded-2xl bg-error/10 px-4 py-3 text-sm text-error">
+                {whitelistError}
+              </p>
+            )}
             {whitelistList.map((entry) => {
               const statusStyles = getWhitelistStatusStyles(entry.status)
               const StatusIcon = statusStyles.Icon
@@ -1123,7 +1164,10 @@ export function Organization() {
               <input
                 className="w-full bg-transparent text-base text-text-primary outline-none"
                 value={inviteForm.email}
-                onChange={(event) => setInviteForm((current) => ({ ...current, email: event.currentTarget.value }))}
+                onChange={(event) => {
+                  const { value } = event.currentTarget
+                  setInviteForm((current) => ({ ...current, email: value }))
+                }}
                 placeholder="persona@example.com"
                 required
               />
@@ -1133,9 +1177,10 @@ export function Organization() {
               <select
                 className="w-full bg-transparent text-base text-text-primary outline-none"
                 value={inviteForm.role}
-                onChange={(event) =>
-                  setInviteForm((current) => ({ ...current, role: event.currentTarget.value as WhitelistRole }))
-                }
+                onChange={(event) => {
+                  const { value } = event.currentTarget
+                  setInviteForm((current) => ({ ...current, role: value as WhitelistRole }))
+                }}
               >
                 <option value="asistente">Asistente</option>
                 <option value="staff">Staff</option>

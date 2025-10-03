@@ -13,6 +13,8 @@ type UserPreferences = {
   availableToPlay?: boolean
 }
 
+type WhitelistStatus = 'approved' | 'pending' | 'revoked'
+
 type UserProfile = {
   alias?: string
   fullName?: string
@@ -31,6 +33,7 @@ type AuthorizedEntry = {
   invitedBy?: string
   displayName?: string
   notes?: string
+  status?: WhitelistStatus
 }
 
 type AuthContextValue = {
@@ -183,5 +186,6 @@ function mapAuthorized(data: DocumentData): AuthorizedEntry {
     invitedBy: data.invitedBy ?? undefined,
     displayName: data.displayName ?? undefined,
     notes: data.notes ?? undefined,
+    status: typeof data.status === 'string' ? (data.status as WhitelistStatus) : undefined,
   }
 }

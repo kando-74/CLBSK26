@@ -35,6 +35,8 @@ type CallableResponse = {
   }
 }
 
+type UpdateCallableResponse = CallableResponse
+
 function normalizeRole(value: unknown): WhitelistRole {
   if (value === 'organizacion' || value === 'staff') {
     return value
@@ -73,6 +75,7 @@ function timestampToDate(value: unknown): Date | null {
 }
 
 const addAuthorizedEmailCallable = httpsCallable(functions, 'addAuthorizedEmail')
+const updateAuthorizedEmailCallable = httpsCallable(functions, 'updateAuthorizedEmail')
 
 export function useWhitelistManagement() {
   const [entries, setEntries] = useState<WhitelistEntryRecord[]>([])
@@ -127,11 +130,37 @@ export function useWhitelistManagement() {
     }
   }, [])
 
+
+  const updateEntry = useCallback(async (payload: { email: string; status?: WhitelistStatus }) => {
+    try {
+      const response = await updateAuthorizedEmailCallable(payload)
+      const data = response.data as UpdateCallableResponse
+
+      if (data?.status !== 'success') {
+        throw new Error('No se pudo actualizar la whitelist.')
+      }
+
+      return mapWhitelistDocument({
+        email: payload.email,
+        role: data.entry.role ?? 'asistente',
+        invitedBy: data.entry.invitedBy ?? null,
+        displayName: data.entry.displayName ?? null,
+        notes: data.entry.notes ?? null,
+        status: data.entry.status ?? 'approved',
+        updatedAt: data.entry.updatedAt ?? new Date().toISOString(),
+      })
+    } catch (callableError) {
+      console.error('Error al actualizar una entrada de la whitelist', callableError)
+      throw callableError
+    }
+  }, [])
+
   return {
     entries,
     loading,
     error,
     addEntry,
+    updateEntry,
     hasEntries: entries.length > 0,
   }
 }

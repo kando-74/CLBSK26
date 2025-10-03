@@ -9,13 +9,14 @@ import { Statistics } from './pages/Statistics'
 import { Access } from './pages/Access'
 import { Organization } from './pages/Organization'
 import { UserProfilePublic } from './pages/UserProfilePublic'
+import { RequireAuth } from './components/RequireAuth'
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/acceso" element={<Access />} />
-        <Route element={<AppShell />}>
+        <Route element={<RequireAuth><AppShell /></RequireAuth>}>
           <Route path="/" element={<Home />} />
           <Route path="/ludoteca" element={<Library />} />
           <Route path="/registrar" element={<Register />} />

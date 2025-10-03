@@ -19,6 +19,11 @@ function useAddGame() {
       bggId?: number
       bggData?: { name: string; thumbnail?: string; yearPublished?: number }
       manualTitle?: string
+      entry?: {
+        yearPublished?: number | null
+        durationMinutes?: number | null
+        weightValue?: number | null
+      }
     }) => addLibraryEntry(data),
     onSuccess: () => {
       // Invalida la caché de la ludoteca para que se actualice automáticamente
@@ -64,6 +69,9 @@ export function AddGameForm({ eventId = 'main-event' }: { eventId?: string }) {
     try {
       // Obtenemos detalles completos para tener la mejor info posible
       const details = await getBoardGameDetails(bggId)
+      const resolvedYear = yearPublished ?? undefined
+      const resolvedDuration = details.playingTime || details.maxPlaytime || details.minPlaytime || undefined
+      const resolvedWeight = details.averageWeight && details.averageWeight > 0 ? details.averageWeight : undefined
       await addGameMutation.mutateAsync({
         eventId,
         language,
@@ -71,7 +79,12 @@ export function AddGameForm({ eventId = 'main-event' }: { eventId?: string }) {
         bggData: {
           name: details.name,
           thumbnail: details.thumbnailUrl ?? details.imageUrl,
-          yearPublished: yearPublished ?? undefined,
+          yearPublished: resolvedYear,
+        },
+        entry: {
+          yearPublished: resolvedYear ?? null,
+          durationMinutes: resolvedDuration ?? null,
+          weightValue: resolvedWeight ?? null,
         },
       })
     } catch (error) {

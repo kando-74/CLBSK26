@@ -41,6 +41,9 @@ type LibraryEntryPayload = {
   bggId?: number | null;
   manual?: boolean;
   eventId?: string | null;
+  yearPublished?: number | null;
+  durationMinutes?: number | null;
+  weightValue?: number | null;
 };
 
 type LibraryEntryRecord = {
@@ -58,6 +61,9 @@ type LibraryEntryRecord = {
   manual: boolean;
   bggId: number | null;
   eventId: string | null;
+  yearPublished: number | null;
+  durationMinutes: number | null;
+  weightValue: number | null;
   createdAt: admin.firestore.Timestamp | null;
   updatedAt: admin.firestore.Timestamp | null;
 };
@@ -90,7 +96,25 @@ type AddAuthorizedEmailResponse = {
     invitedBy: string | null;
     displayName: string | null;
     notes: string | null;
-    updatedAt: admin.firestore.Timestamp;
+    updatedAt: admin.firestore.Timestamp | null;
+  };
+};
+
+type UpdateAuthorizedEmailPayload = {
+  email?: string;
+  status?: string | null;
+};
+
+type UpdateAuthorizedEmailResponse = {
+  status: "success";
+  entry: {
+    email: string;
+    role: WhitelistRole;
+    status: WhitelistStatus;
+    invitedBy: string | null;
+    displayName: string | null;
+    notes: string | null;
+    updatedAt: admin.firestore.Timestamp | null;
   };
 };
 
@@ -118,6 +142,24 @@ function optionalString(value: unknown): string | null {
   return sanitized.length > 0 ? sanitized : null;
 }
 
+function coerceNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim().replace(',', '.');
+    if (trimmed.length === 0) {
+      return null;
+    }
+
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
 function sanitizeEmail(value: unknown): string {
   return sanitizeString(value, "").toLowerCase();
 }
@@ -136,6 +178,21 @@ function normalizeWhitelistStatus(value: unknown): WhitelistStatus {
     return value;
   }
   return "approved";
+}
+
+async function readAuthorizedEmailEntry(email: string): Promise<UpdateAuthorizedEmailResponse["entry"]> {
+  const snapshot = await authorizedEmailsCollection.doc(email).get();
+  const data = snapshot.data() ?? {};
+
+  return {
+    email,
+    role: normalizeWhitelistRole(data.role),
+    status: normalizeWhitelistStatus(data.status),
+    invitedBy: optionalString(data.invitedBy ?? null),
+    displayName: optionalString(data.displayName ?? null),
+    notes: optionalString(data.notes ?? null),
+    updatedAt: toTimestamp(data.updatedAt ?? null),
+  };
 }
 
 function resolveOwnerName(request: CallableRequest<AddLibraryEntryPayload>): string {
@@ -192,6 +249,15 @@ function buildLibraryEntry(
   const titleFromBgg = sanitizeString(bggData?.name, "");
   const resolvedTitle = sanitizeString(providedEntry?.title ?? manualTitle ?? titleFromBgg, "Juego sin titulo");
 
+  const yearPublishedFromEntry =
+    typeof providedEntry?.yearPublished === "number" ? providedEntry.yearPublished : null;
+  const yearPublishedFromBgg =
+    typeof bggData?.yearPublished === "number" ? bggData.yearPublished : null;
+  const yearPublished = yearPublishedFromEntry ?? yearPublishedFromBgg;
+
+  const durationMinutes = coerceNumber(providedEntry?.durationMinutes ?? null);
+  const weightValue = coerceNumber(providedEntry?.weightValue ?? null);
+
   const coverFromInput = providedEntry?.coverUrl ?? null;
   const coverFromBgg = bggData?.imageUrl ?? bggData?.thumbnail ?? null;
   const preferredCover = coverFromInput ?? coverFromBgg ?? null;
@@ -227,6 +293,9 @@ function buildLibraryEntry(
           ? request.data.bggId
           : null,
     eventId: eventIdCandidate,
+    yearPublished,
+    durationMinutes,
+    weightValue,
     createdAt: nowTimestamp,
     updatedAt: nowTimestamp,
   };
@@ -256,6 +325,9 @@ function mapFirestoreEntry(
     manual: Boolean(data.manual),
     bggId: typeof data.bggId === "number" ? data.bggId : null,
     eventId,
+    yearPublished: typeof data.yearPublished === "number" ? data.yearPublished : null,
+    durationMinutes: typeof data.durationMinutes === "number" ? data.durationMinutes : null,
+    weightValue: typeof data.weightValue === "number" ? data.weightValue : coerceNumber(data.weightValue ?? null),
     createdAt: toTimestamp(data.createdAt ?? null),
     updatedAt: toTimestamp(data.updatedAt ?? null),
   };
@@ -328,7 +400,6 @@ export const addAuthorizedEmail = onCall(async (request: CallableRequest<AddAuth
     }
 
     const role = normalizeWhitelistRole(request.data?.role ?? null);
-    const now = admin.firestore.Timestamp.now();
     const serverTimestamp = admin.firestore.FieldValue.serverTimestamp();
 
     const documentRef = authorizedEmailsCollection.doc(email);
@@ -346,17 +417,10 @@ export const addAuthorizedEmail = onCall(async (request: CallableRequest<AddAuth
         updatedAt: serverTimestamp,
       });
 
+      const entry = await readAuthorizedEmailEntry(email);
       return {
         status: "success",
-        entry: {
-          email,
-          role,
-          status: "approved",
-          invitedBy: actorEmail,
-          displayName: null,
-          notes: null,
-          updatedAt: now,
-        },
+        entry,
       } satisfies AddAuthorizedEmailResponse;
     }
 
@@ -379,20 +443,66 @@ export const addAuthorizedEmail = onCall(async (request: CallableRequest<AddAuth
       { merge: true },
     );
 
+    const entry = await readAuthorizedEmailEntry(email);
     return {
       status: "success",
-      entry: {
-        email,
-        role,
-        status,
-        invitedBy,
-        displayName,
-        notes,
-        updatedAt: now,
-      },
+      entry,
     } satisfies AddAuthorizedEmailResponse;
   } catch (error) {
     logger.error("Error al actualizar la whitelist", error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError("internal", "No se pudo actualizar la whitelist.");
+  }
+});
+
+export const updateAuthorizedEmail = onCall(async (request: CallableRequest<UpdateAuthorizedEmailPayload>) => {
+  const actorEmail = sanitizeEmail(request.auth?.token?.email ?? null);
+  if (!actorEmail) {
+    throw new HttpsError("permission-denied", "Debes iniciar sesion para gestionar la whitelist.");
+  }
+
+  try {
+    const actorSnapshot = await authorizedEmailsCollection.doc(actorEmail).get();
+    const actorRole = sanitizeString(actorSnapshot.data()?.role, "");
+
+    if (actorRole !== "organizacion") {
+      throw new HttpsError("permission-denied", "No tienes permisos para modificar la whitelist.");
+    }
+
+    const email = sanitizeEmail(request.data?.email ?? null);
+    if (!email || !EMAIL_REGEX.test(email)) {
+      throw new HttpsError("invalid-argument", "Debes proporcionar un correo electronico valido.");
+    }
+
+    const documentRef = authorizedEmailsCollection.doc(email);
+    const existingSnapshot = await documentRef.get();
+
+    if (!existingSnapshot.exists) {
+      throw new HttpsError("not-found", "El correo indicado no forma parte de la whitelist.");
+    }
+
+    const desiredStatus =
+      typeof request.data?.status === "string"
+        ? normalizeWhitelistStatus(request.data.status)
+        : normalizeWhitelistStatus(existingSnapshot.data()?.status);
+
+    await documentRef.set(
+      {
+        status: desiredStatus,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+
+    const entry = await readAuthorizedEmailEntry(email);
+    return {
+      status: "success",
+      entry,
+    } satisfies UpdateAuthorizedEmailResponse;
+  } catch (error) {
+    logger.error("Error al modificar una entrada de la whitelist", error);
     if (error instanceof HttpsError) {
       throw error;
     }
@@ -451,6 +561,9 @@ export const addLibraryEntry = onCall(async (request: CallableRequest<AddLibrary
       manual: entry.manual,
       bggId: entry.bggId,
       eventId: entry.eventId,
+      yearPublished: entry.yearPublished,
+      durationMinutes: entry.durationMinutes,
+      weightValue: entry.weightValue,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
