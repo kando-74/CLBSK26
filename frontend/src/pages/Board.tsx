@@ -195,8 +195,8 @@ function StartTableDialog({ table, pending, onConfirm, onDismiss }: StartTableDi
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
-      <div className="w-full max-w-2xl space-y-4 rounded-2xl bg-surface p-6 shadow-card">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/50 px-4 py-8">
+      <div className="w-full max-w-2xl space-y-4 rounded-2xl bg-surface p-6 shadow-card max-h-[calc(100vh-4rem)] overflow-y-auto">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-lg font-semibold text-text-primary">Iniciar partida</h3>
@@ -335,8 +335,8 @@ function FinishTableDialog({ table, pending, onConfirm, onDismiss }: FinishTable
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
-      <div className="w-full max-w-2xl space-y-4 rounded-2xl bg-surface p-6 shadow-card">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/50 px-4 py-8">
+      <div className="w-full max-w-2xl space-y-4 rounded-2xl bg-surface p-6 shadow-card max-h-[calc(100vh-4rem)] overflow-y-auto">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-lg font-semibold text-text-primary">Finalizar partida</h3>
