@@ -275,6 +275,7 @@ export function Library() {
         room: game.language ? `Sala ${game.language}` : '',
         description: `Proponemos partida para ${game.title}.`,
       })
+      setSelectedGame(null)
       setTableError(null)
       setShowTableModal(true)
     },
