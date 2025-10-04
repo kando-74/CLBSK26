@@ -844,7 +844,7 @@ export const Board: React.FC = () => {
             const isParticipant = participantNamesLower.includes(normalizedUserName)
             const isCurrentPlayer = currentPlayersLower.includes(normalizedUserName)
             const canStart = table.status === 'open' && (isHost || isParticipant)
-            const canFinish = table.status === 'in-progress' && (isCurrentPlayer || isHost)
+            const canFinish = table.status === 'in-progress' && (isHost || isParticipant || isCurrentPlayer)
             const joinDisabled =
               table.seats.taken >= table.seats.total ||
               table.joined ||
