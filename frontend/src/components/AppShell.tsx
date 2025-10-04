@@ -123,15 +123,15 @@ export function AppShell() {
               {switchingAccount ? 'Cerrando...' : 'Cambiar'}
             </button>
           </div>
-          <ul className="flex items-center justify-between">
+          <ul className="flex items-center gap-2 overflow-x-auto pb-1">
             {navItems.map(({ to, label, icon: Icon }) => {
               const isActive = location.pathname === to
               return (
-                <li key={to}>
+                <li key={to} className="flex-shrink-0">
                   <Link
                     to={to}
                     className={clsx(
-                      'flex flex-col items-center gap-1 rounded-xl px-4 py-2 text-xs font-medium transition-colors',
+                      'flex flex-col items-center gap-1 rounded-xl px-4 py-2 text-xs font-medium transition-colors whitespace-nowrap',
                       isActive ? 'text-primary' : 'text-text-secondary hover:text-primary',
                     )}
                   >
