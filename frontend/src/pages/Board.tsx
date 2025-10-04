@@ -437,9 +437,31 @@ export const Board: React.FC = () => {
     return ['Todas', ...Array.from(rooms).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))]
   }, [tables])
 
+  const normalizedUserName = userDisplayName.trim().toLowerCase()
+
   const filteredTables = useMemo(() => {
-    return tables.filter((table) => shouldIncludeTable(table, filters))
-  }, [filters, tables])
+    const normalized = normalizedUserName
+    return tables
+      .filter((table) => shouldIncludeTable(table, filters))
+      .filter((table) => {
+        if (table.status === 'open') {
+          return table.seats.taken < table.seats.total
+        }
+
+        if (table.status === 'in-progress') {
+          const hostMatches = table.host.trim().toLowerCase() === normalized && normalized.length > 0
+          const participantMatches = table.participants
+            .map((participant) => participant.name.trim().toLowerCase())
+            .includes(normalized)
+          const currentMatches = table.currentPlayers
+            .map((participant) => participant.name.trim().toLowerCase())
+            .includes(normalized)
+          return hostMatches || participantMatches || currentMatches
+        }
+
+        return false
+      })
+  }, [filters, tables, normalizedUserName])
 
   const startTargetTable = useMemo(() => tables.find((table) => table.id === startTableId) ?? null, [startTableId, tables])
   const finishTargetTable = useMemo(
@@ -447,7 +469,6 @@ export const Board: React.FC = () => {
     [finishTableId, tables],
   )
 
-  const normalizedUserName = userDisplayName.trim().toLowerCase()
 
   function formatTimeFromTimestamp(timestamp: number | null) {
     if (!timestamp) {
