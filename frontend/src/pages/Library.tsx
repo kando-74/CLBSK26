@@ -606,8 +606,8 @@ export function Library() {
         )}
       </section>
       {selectedGame && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/50 px-4">
-          <div className="w-full max-w-3xl space-y-4 rounded-2xl bg-surface p-6 shadow-card">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center overflow-y-auto bg-slate-900/50 px-4 py-8">
+          <div className="w-full max-w-3xl space-y-4 rounded-2xl bg-surface p-6 shadow-card max-h-[calc(100vh-4rem)] overflow-y-auto">
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-text-primary">{selectedGame.title}</h3>
