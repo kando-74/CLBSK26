@@ -501,7 +501,14 @@ export function Library() {
                   min={1}
                   max={8}
                   value={tableDraft.seats}
-                  onChange={(event) => setTableDraft((current) => ({ ...current, seats: Number(event.currentTarget.value) }))}
+                  onChange={(event) => {
+                    const { value } = event.currentTarget
+                    const parsed = Number.parseInt(value, 10)
+                    setTableDraft((current) => ({
+                      ...current,
+                      seats: Number.isNaN(parsed) ? current.seats : parsed,
+                    }))
+                  }}
                   className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-text-primary outline-none"
                 />
               </label>
@@ -510,7 +517,10 @@ export function Library() {
                 <input
                   type="text"
                   value={tableDraft.start}
-                  onChange={(event) => setTableDraft((current) => ({ ...current, start: event.currentTarget.value }))}
+                  onChange={(event) => {
+                    const { value } = event.currentTarget
+                    setTableDraft((current) => ({ ...current, start: value }))
+                  }}
                   className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-text-primary outline-none"
                   placeholder="Por confirmar"
                 />
@@ -520,7 +530,10 @@ export function Library() {
                 <input
                   type="text"
                   value={tableDraft.room}
-                  onChange={(event) => setTableDraft((current) => ({ ...current, room: event.currentTarget.value }))}
+                  onChange={(event) => {
+                    const { value } = event.currentTarget
+                    setTableDraft((current) => ({ ...current, room: value }))
+                  }}
                   className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-text-primary outline-none"
                   placeholder="Sala por confirmar"
                 />
@@ -529,7 +542,10 @@ export function Library() {
                 DescripciÃ³n
                 <textarea
                   value={tableDraft.description}
-                  onChange={(event) => setTableDraft((current) => ({ ...current, description: event.currentTarget.value }))}
+                  onChange={(event) => {
+                    const { value } = event.currentTarget
+                    setTableDraft((current) => ({ ...current, description: value }))
+                  }}
                   className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-text-primary outline-none"
                   rows={3}
                 />
