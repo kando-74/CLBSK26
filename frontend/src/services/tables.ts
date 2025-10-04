@@ -893,6 +893,80 @@ async function startTableInFirestore(
   }
 }
 
+async function cancelTableInFirestore(
+  tableId: string,
+  deviceId: string,
+  requesterName: string,
+): Promise<TableActionResult> {
+  if (!tablesCollectionRef) {
+    return {
+      status: 'error',
+      message: 'No se pudo cancelar la mesa. Revisa tu conexion.',
+    }
+  }
+
+  const normalizedRequester = requesterName.trim().toLowerCase()
+
+  try {
+    const result = await runTransaction<TableActionResult>(db, async (transaction) => {
+      const tableRef = doc(tablesCollectionRef, tableId)
+      const snapshot = await transaction.get(tableRef)
+
+      if (!snapshot.exists()) {
+        return {
+          status: 'error',
+          message: 'La mesa ya no esta disponible.',
+        }
+      }
+
+      const rawData = snapshot.data() as FirestoreTable
+      const hostNormalized = (rawData.host ?? '').trim().toLowerCase()
+      if (!normalizedRequester || hostNormalized !== normalizedRequester) {
+        return {
+          status: 'error',
+          message: 'Solo la persona anfitriona puede cancelar la mesa.',
+          data: rawData,
+        }
+      }
+
+      if ((rawData.status ?? 'open') !== 'open') {
+        return {
+          status: 'error',
+          message: `${rawData.game}: la partida ya esta en marcha o finalizada.`,
+          data: rawData,
+        }
+      }
+
+      transaction.delete(tableRef)
+
+      return {
+        status: 'success',
+        message: `${rawData.game}: anuncio cancelado.`,
+      }
+    })
+
+    if (result.status === 'success') {
+      void logActivity(
+        {
+          type: 'table:cancel',
+          entityId: tableId,
+          entityName: 'Mesa',
+          message: 'La mesa se ha cancelado',
+        },
+        { deviceId },
+      )
+    }
+
+    return result
+  } catch (error) {
+    console.error('No se pudo cancelar la mesa', error)
+    return {
+      status: 'error',
+      message: 'No se pudo cancelar la mesa. Intentalo de nuevo.',
+    }
+  }
+}
+
 async function completeTableInFirestore(
   tableId: string,
   deviceId: string,
@@ -1339,6 +1413,51 @@ export async function startTableEntry(tableId: string, input: StartTableInput): 
   }
 }
 
+export async function cancelTableEntry(tableId: string, requesterName: string): Promise<TableActionResult> {
+  await simulateDelay(150)
+
+  if (useFirestore) {
+    const deviceId = getClientDeviceId()
+    return cancelTableInFirestore(tableId, deviceId, requesterName)
+  }
+
+  const normalizedRequester = requesterName.trim().toLowerCase()
+  const tables = readLocalTables()
+  const index = tables.findIndex((table) => table.id === tableId)
+  if (index === -1) {
+    return {
+      status: 'error',
+      message: 'La mesa ya no esta disponible.',
+    }
+  }
+
+  const table = tables[index]
+  const hostNormalized = (table.host ?? '').trim().toLowerCase()
+  if (!normalizedRequester || hostNormalized !== normalizedRequester) {
+    return {
+      status: 'error',
+      message: 'Solo la persona anfitriona puede cancelar la mesa.',
+    }
+  }
+
+  if ((table.status ?? 'open') !== 'open') {
+    return {
+      status: 'error',
+      message: `${table.game}: la partida ya esta en marcha o finalizada.`,
+    }
+  }
+
+  const next = tables.slice()
+  next.splice(index, 1)
+  writeLocalTables(next)
+  unmarkTableAsJoinedLocally(tableId)
+
+  return {
+    status: 'success',
+    message: `${table.game}: anuncio cancelado.`,
+  }
+}
+
 export async function completeTableEntry(tableId: string, input: CompleteTableInput): Promise<TableActionResult> {
   await simulateDelay(150)
 
@@ -1452,6 +1571,7 @@ type UseTablesService = TablesState & {
   joinTable: (tableId: string, participantName: string) => Promise<TableActionResult>
   startTable: (tableId: string, input: StartTableInput) => Promise<TableActionResult>
   completeTable: (tableId: string, input: CompleteTableInput) => Promise<TableActionResult>
+  cancelTable: (tableId: string, requesterName: string) => Promise<TableActionResult>
 }
 
 export function useTablesService(): UseTablesService {
@@ -1586,6 +1706,23 @@ export function useTablesService(): UseTablesService {
     return result
   }, [])
 
+  const handleCancel = useCallback(async (tableId: string, requesterName: string) => {
+    const result = await cancelTableEntry(tableId, requesterName)
+    if (result.status === 'success') {
+      setState((current) => ({
+        loading: current.loading,
+        error: null,
+        tables: current.tables.filter((table) => table.id !== tableId),
+      }))
+    }
+    if (result.status === 'error') {
+      setState((current) => ({ ...current, error: result.message ?? 'No se pudo cancelar la mesa.' }))
+    }
+
+    return result
+  }, [])
+
+
   return useMemo(
     () => ({
       ...state,
@@ -1593,8 +1730,9 @@ export function useTablesService(): UseTablesService {
       createTable: handleCreate,
       joinTable: handleJoin,
       startTable: handleStart,
+      cancelTable: handleCancel,
       completeTable: handleComplete,
     }),
-    [handleComplete, handleCreate, handleJoin, handleStart, loadTables, state],
+      [handleCancel, handleComplete, handleCreate, handleJoin, handleStart, loadTables, state],
   )
 }

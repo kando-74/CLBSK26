@@ -407,7 +407,7 @@ function FinishTableDialog({ table, pending, onConfirm, onDismiss }: FinishTable
 export const Board: React.FC = () => {
   const { user, profile, localAlias } = useAuth()
   const userDisplayName = useMemo(() => getDisplayName(profile, user, localAlias), [localAlias, profile, user])
-  const { tables, loading, error, refresh, createTable, joinTable, startTable, completeTable } = useTablesService()
+  const { tables, loading, error, refresh, createTable, joinTable, startTable, completeTable, cancelTable } = useTablesService()
   const { getTableHighlight } = useLiveEvents()
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS)
   const [showFilters, setShowFilters] = useState(false)
@@ -424,6 +424,7 @@ export const Board: React.FC = () => {
   const [finishTableId, setFinishTableId] = useState<string | null>(null)
   const [pendingStartId, setPendingStartId] = useState<string | null>(null)
   const [pendingFinishId, setPendingFinishId] = useState<string | null>(null)
+  const [pendingCancelId, setPendingCancelId] = useState<string | null>(null)
   const [openChatTableId, setOpenChatTableId] = useState<string | null>(null)
 
   const availableRooms = useMemo(() => {
@@ -568,6 +569,34 @@ export const Board: React.FC = () => {
       setPendingFinishId(null)
     }
   }
+  async function handleCancelTable(tableId: string) {
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm('Seguro que quieres cancelar esta mesa?')
+      if (!confirmed) {
+        return
+      }
+    }
+
+    setPendingCancelId(tableId)
+    try {
+      const result = await cancelTable(tableId, userDisplayName)
+      setActionFeedback({
+        message: result.message,
+        tone: mapStatusToTone(result.status),
+      })
+      if (result.status === 'success') {
+        if (startTableId === tableId) {
+          setStartTableId(null)
+        }
+        if (finishTableId === tableId) {
+          setFinishTableId(null)
+        }
+      }
+    } finally {
+      setPendingCancelId(null)
+    }
+  }
+
 
   async function handleCreateTable(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -865,6 +894,7 @@ export const Board: React.FC = () => {
             const isParticipant = participantNamesLower.includes(normalizedUserName)
             const isCurrentPlayer = currentPlayersLower.includes(normalizedUserName)
             const canStart = table.status === 'open' && (isHost || isParticipant)
+            const canCancel = table.status === 'open' && isHost
             const canFinish = table.status === 'in-progress' && (isHost || isParticipant || isCurrentPlayer)
             const joinDisabled =
               table.seats.taken >= table.seats.total ||
@@ -1031,6 +1061,16 @@ export const Board: React.FC = () => {
                       className="rounded-full bg-secondary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-secondary/80"
                     >
                       Finalizar partida
+                    </button>
+                  )}
+                  {canCancel && (
+                    <button
+                      type="button"
+                      onClick={() => handleCancelTable(table.id)}
+                      disabled={pendingCancelId === table.id}
+                      className="rounded-full border border-error/40 px-4 py-2 text-sm font-semibold text-error transition-colors hover:bg-error/10 disabled:cursor-not-allowed disabled:border-error/20 disabled:text-error/60"
+                    >
+                      {pendingCancelId === table.id ? 'Cancelando...' : 'Cancelar mesa'}
                     </button>
                   )}
                   <button
