@@ -1,20 +1,15 @@
-export function buildUserProfilePath(name: string): string {
-  const trimmed = name.trim()
-  if (!trimmed) {
+export function buildUserProfilePath(uid: string): string {
+  if (!uid) {
     return '/personas/anonimo'
   }
-  return `/personas/${encodeURIComponent(trimmed)}`
+  return `/personas/${uid}`
 }
 
 export function decodeUserProfileParam(param: string | undefined): string {
   if (!param) {
     return ''
   }
-  try {
-    return decodeURIComponent(param)
-  } catch {
-    return param
-  }
+  return param
 }
 
 export function normalizeUserName(value: string): string {

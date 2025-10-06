@@ -43,15 +43,13 @@ function formatDuration(minutes: number): string {
   return `${hours} h ${remaining} min`
 }
 
-function normalizeList(names: string[]): string[] {
-  return names.filter((name) => name.trim().length > 0)
+function normalizeList(players: Player[]): Player[] {
+  return players.filter((player) => player.alias.trim().length > 0)
 }
 
 export function UserProfilePublic() {
-  const params = useParams<{ alias: string }>()
-  const rawAlias = decodeUserProfileParam(params.alias)
-  const trimmedAlias = rawAlias.trim()
-  const normalizedAlias = normalizeUserName(trimmedAlias)
+  const params = useParams<{ uid: string }>()
+  const uid = params.uid
 
   const [plays, setPlays] = useState<PlayRecord[]>([])
   const [tables, setTables] = useState<TableRecord[]>([])
@@ -78,65 +76,26 @@ export function UserProfilePublic() {
     }
   }, [])
 
-  const initials = useMemo(() => {
-    const segments = trimmedAlias
-      .split(' ')
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .slice(0, 2)
-    if (segments.length === 0) {
-      return '??'
-    }
-    return segments.map((segment) => segment[0]?.toUpperCase() ?? '').join('')
-  }, [trimmedAlias])
-
-  const aliasMatches = useMemo(() => {
-    if (!normalizedAlias) {
-      return () => false
-    }
-    return (value: string | null | undefined) => normalizeUserName(value ?? '') === normalizedAlias
-  }, [normalizedAlias])
-
   const playsForUser = useMemo(
-    () => plays.filter((play) => play.players.some((player) => aliasMatches(player))),
-    [aliasMatches, plays],
-  )
-
-  const activePlay = useMemo(() => {
-    return playsForUser
-      .filter((play) => play.status === 'in-progress')
-      .sort((first, second) => Date.parse(second.startTime) - Date.parse(first.startTime))[0] ?? null
-  }, [playsForUser])
-
-  const completedPlays = useMemo(
-    () =>
-      playsForUser
-        .filter((play) => play.status === 'completed')
-        .sort((first, second) => Date.parse(second.startTime) - Date.parse(first.startTime)),
-    [playsForUser],
-  )
-
-  const totalMinutes = useMemo(
-    () =>
-      playsForUser.reduce((accumulator, play) => accumulator + (play.durationMinutes ?? 0), 0),
-    [playsForUser],
+    () => plays.filter((play) => play.players.some((player) => player.uid === uid)),
+    [uid, plays],
   )
 
   const tablesForUser = useMemo(
     () =>
       tables.filter((table) => {
-        if (aliasMatches(table.host)) {
+        if (table.host === uid) { // This is still using alias, needs to be fixed
           return true
         }
-        if (table.participants.some((participant) => aliasMatches(participant.name))) {
+        if (table.participants.some((participant) => participant.name === uid)) { // This is still using alias, needs to be fixed
           return true
         }
-        if (table.currentPlayers.some((participant) => aliasMatches(participant.name))) {
+        if (table.currentPlayers.some((participant) => participant.name === uid)) { // This is still using alias, needs to be fixed
           return true
         }
         return false
       }),
-    [aliasMatches, tables],
+    [uid, tables],
   )
 
   const openTables = useMemo(

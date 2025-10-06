@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useLocation } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import { CalendarCheck, Clock, MapPin, Plus, Sparkles } from 'lucide-react'
 import { GameTitle } from '../components/GameTitle'
 import {
@@ -411,6 +413,7 @@ function FinishTableDialog({ table, pending, onConfirm, onDismiss }: FinishTable
 
 export const BoardPage: React.FC = () => {
   const { user, profile, localAlias } = useAuth()
+  const location = useLocation()
   const userDisplayName = useMemo(() => getDisplayName(profile, user, localAlias), [localAlias, profile, user])
   const { tables, loading, error, refresh, createTable, joinTable, startTable, completeTable, cancelTable } = useTablesService()
   const { getTableHighlight } = useLiveEvents()
@@ -431,6 +434,21 @@ export const BoardPage: React.FC = () => {
   const [pendingFinishId, setPendingFinishId] = useState<string | null>(null)
   const [pendingCancelId, setPendingCancelId] = useState<string | null>(null)
   const [openChatTableId, setOpenChatTableId] = useState<string | null>(null)
+  const [highlightedTableId, setHighlightedTableId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const hash = location.hash.replace('#', '')
+    if (hash) {
+      setHighlightedTableId(hash)
+      const element = document.getElementById(hash)
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        setTimeout(() => {
+          setHighlightedTableId(null)
+        }, 5000)
+      }
+    }
+  }, [location.hash])
 
   const availableRooms = useMemo(() => {
     const rooms = new Set<string>()
@@ -934,12 +952,12 @@ export const BoardPage: React.FC = () => {
             const currentPlayersNodes = renderUserList(currentPlayersNames)
 
             const tableHighlight = getTableHighlight(table.id)
-            const cardHighlightClass = tableHighlight
+            const cardHighlightClass = tableHighlight || highlightedTableId === table.id
               ? 'ring-2 ring-primary/40 shadow-[0_18px_50px_rgba(99,102,241,0.25)]'
               : ''
 
             return (
-              <article key={table.id} className={`card space-y-4 p-5 transition-shadow duration-200 ${cardHighlightClass}`}>
+              <article id={table.id} key={table.id} className={`card space-y-4 p-5 transition-shadow duration-200 ${cardHighlightClass}`}>
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div className="space-y-2">
                     <p className="text-xs uppercase tracking-wide text-text-secondary">Juego</p>

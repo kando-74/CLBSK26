@@ -103,7 +103,7 @@ export async function searchBoardGames(query: string): Promise<BggSearchResult[]
 
   for (const item of items) {
     const id = Number(item.getAttribute('id'))
-    const nameValue = getAttribute(item.querySelector('name[type="primary"]') ?? item.querySelector('name'), 'value')
+    const nameValue = getTextContent(item.querySelector('name[type="primary"]') ?? item.querySelector('name'))
     const yearValue = getAttribute(item.querySelector('yearpublished'), 'value')
 
     if (!id || !nameValue) {
@@ -128,7 +128,7 @@ export async function getBoardGameDetails(id: number): Promise<BggGameDetails> {
     throw new Error('Juego no encontrado en BGG')
   }
 
-  const nameValue = getAttribute(item.querySelector('name[type="primary"]') ?? item.querySelector('name'), 'value')
+  const nameValue = getTextContent(item.querySelector('name[type="primary"]') ?? item.querySelector('name'))
   const minPlayers = Number(getAttribute(item.querySelector('minplayers'), 'value') ?? 0)
   const maxPlayers = Number(getAttribute(item.querySelector('maxplayers'), 'value') ?? 0)
   const minPlaytime = Number(getAttribute(item.querySelector('minplaytime'), 'value') ?? 0)
@@ -149,7 +149,7 @@ export async function getBoardGameDetails(id: number): Promise<BggGameDetails> {
   return {
     id,
     name: nameValue,
-    description: getAttribute(item.querySelector('description'), 'value') ?? undefined,
+    description: getTextContent(item.querySelector('description')) ?? undefined,
     minPlayers: minPlayers || undefined,
     maxPlayers: maxPlayers || undefined,
     minPlaytime: minPlaytime || undefined,

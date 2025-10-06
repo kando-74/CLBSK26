@@ -29,11 +29,16 @@ export type PlayChronicles = Record<string, string>
 
 export type RoomOccupancySummary = Record<string, { activePlays: number; players: number }>
 
+export type Player = {
+  uid: string;
+  alias: string;
+}
+
 export type PlayRecord = {
   id: string
   tableId: string | null
   game: string
-  players: string[]
+  players: Player[]
   startTime: string
   room: string
   durationMinutes: number | null
@@ -48,7 +53,7 @@ export type PlayRecord = {
 export type RegisterPlayInput = {
   tableId?: string | null
   game: string
-  players: string[]
+  players: Player[]
   startTime: string
   room: string
   durationMinutes?: number | null
@@ -69,7 +74,7 @@ const seedPlays: PlayRecord[] = [
     id: 'seed-play-heat-1',
     tableId: null,
     game: 'Heat: Pedal to the Metal',
-    players: ['Ana', 'Luis', 'María', 'Jorge'],
+    players: [{uid: 'user-1', alias: 'Ana'}, {uid: 'user-2', alias: 'Luis'}, {uid: 'user-3', alias: 'María'}, {uid: 'user-4', alias: 'Jorge'}],
     startTime: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 16, 0, 0, 0).toISOString(),
     room: 'Sala Roja',
     durationMinutes: 70,
@@ -87,7 +92,7 @@ const seedPlays: PlayRecord[] = [
     id: 'seed-play-earth-1',
     tableId: null,
     game: 'Earth',
-    players: ['Claudia', 'Inés', 'Raúl'],
+    players: [{uid: 'user-5', alias: 'Claudia'}, {uid: 'user-6', alias: 'Inés'}, {uid: 'user-7', alias: 'Raúl'}],
     startTime: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 17, 30, 0, 0).toISOString(),
     room: 'Sala Verde',
     durationMinutes: 90,
@@ -102,7 +107,7 @@ const seedPlays: PlayRecord[] = [
     id: 'seed-play-scout-1',
     tableId: null,
     game: 'Scout',
-    players: ['Ana', 'María', 'Claudia'],
+    players: [{uid: 'user-1', alias: 'Ana'}, {uid: 'user-3', alias: 'María'}, {uid: 'user-5', alias: 'Claudia'}],
     startTime: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 18, 45, 0, 0).toISOString(),
     room: 'Lobby principal',
     durationMinutes: 25,
@@ -154,8 +159,13 @@ function parseStoredPlays(raw: string | null): PlayRecord[] {
 
 function normalizeLocalPlay(play: PlayRecord): PlayRecord {
   const players = Array.isArray(play.players)
-    ? play.players.filter((player) => typeof player === 'string' && player.trim().length > 0)
-    : []
+    ? play.players.map((player: any) => {
+        if (typeof player === 'string') {
+          return { uid: player, alias: player };
+        }
+        return player;
+      })
+    : [];
 
   return {
     id: typeof play.id === 'string' ? play.id : `play-${Math.random().toString(36).slice(2)}`,
@@ -336,10 +346,24 @@ function sanitizeChronicles(value: PlayChronicles | unknown): PlayChronicles {
   return sanitized
 }
 
-function normalizePlayers(players: string[]): string[] {
-  return players
-    .map((player) => player.trim())
-    .filter((player) => player.length > 0)
+function normalizePlayers(players: Player[]): Player[] {
+  const seen = new Set<string>();
+  const normalized: Player[] = [];
+
+  players.forEach((player) => {
+    const trimmedAlias = player.alias.trim();
+    if (!trimmedAlias) {
+      return;
+    }
+    const key = player.uid;
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    normalized.push({ uid: player.uid, alias: trimmedAlias });
+  });
+
+  return normalized;
 }
 
 function minutesFromIso(iso: string): number | null {
@@ -353,8 +377,13 @@ function minutesFromIso(iso: string): number | null {
 
 function mapFirestorePlay(id: string, data: Record<string, unknown>): PlayRecord {
   const players = Array.isArray(data.players)
-    ? data.players.filter((player) => typeof player === 'string').map((player) => (player as string).trim()).filter(Boolean)
-    : []
+    ? data.players.map((player: any) => {
+        if (typeof player === 'string') {
+          return { uid: player, alias: player };
+        }
+        return player;
+      })
+    : [];
 
   return {
     id,
@@ -384,16 +413,16 @@ function generateId(): string {
 }
 
 export async function registerPlay(input: RegisterPlayInput): Promise<PlayRecord> {
-  const normalizedPlayers = normalizePlayers(input.players)
-  const nowDate = new Date()
-  const start = Date.parse(input.startTime)
+  const normalizedPlayers = normalizePlayers(input.players);
+  const nowDate = new Date();
+  const start = Date.parse(input.startTime);
   const startIso = Number.isNaN(start)
     ? new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate(), 0, 0, 0, 0).toISOString()
-    : new Date(start).toISOString()
+    : new Date(start).toISOString();
 
   if (useFirestore && playsCollectionRef) {
     try {
-      const playRef = doc(playsCollectionRef)
+      const playRef = doc(playsCollectionRef);
       const payload = {
         tableId: input.tableId ?? null,
         game: input.game.trim() || 'Partida sin nombre',
@@ -411,19 +440,19 @@ export async function registerPlay(input: RegisterPlayInput): Promise<PlayRecord
         resultSummary: null,
         chronicles: {},
         endedAt: null,
-      }
+      };
 
-      await setDoc(playRef, payload)
-      remoteSourceInitialized = true
-      const mapped = mapFirestorePlay(playRef.id, payload)
-      upsertCachedPlay(mapped)
-      return mapped
+      await setDoc(playRef, payload);
+      remoteSourceInitialized = true;
+      const mapped = mapFirestorePlay(playRef.id, payload);
+      upsertCachedPlay(mapped);
+      return mapped;
     } catch (error) {
-      console.error('No se pudo registrar la partida en Firestore, usando caché local', error)
+      console.error('No se pudo registrar la partida en Firestore, usando caché local', error);
     }
   }
 
-  const plays = readLocalPlays()
+  const plays = readLocalPlays();
 
   const newPlay: PlayRecord = {
     id: generateId(),
@@ -442,11 +471,11 @@ export async function registerPlay(input: RegisterPlayInput): Promise<PlayRecord
     resultSummary: null,
     chronicles: {},
     endedAt: null,
-  }
+  };
 
-  const next = [newPlay, ...plays]
-  writeLocalPlays(next)
-  return newPlay
+  const next = [newPlay, ...plays];
+  writeLocalPlays(next);
+  return newPlay;
 }
 
 export async function completePlay(playId: string, input: CompletePlayInput): Promise<PlayRecord | null> {
@@ -576,7 +605,7 @@ export function summarizeRoomOccupancy(plays: PlayRecord[]): RoomOccupancySummar
 
 export type DuplicateQuery = {
   game: string
-  players: string[]
+  players: Player[]
   startTime: string
   thresholdMinutes?: number
 }
@@ -594,14 +623,14 @@ function isMissingIndexError(error: unknown): error is FirebaseError {
 function computeDuplicateMatches(
   source: PlayRecord[],
   duplicateQuery: DuplicateQuery,
-  normalizedPlayers: string[],
+  normalizedPlayers: Player[],
 ): DuplicateMatch[] {
   const threshold =
     typeof duplicateQuery.thresholdMinutes === 'number' ? Math.max(1, duplicateQuery.thresholdMinutes) : 20
   const targetMinutes = minutesFromIso(duplicateQuery.startTime)
   const normalizeGame = (value: string) => value.trim().toLowerCase()
   const targetGame = normalizeGame(duplicateQuery.game)
-  const targetSet = new Set(normalizedPlayers.map((player) => player.toLowerCase()))
+  const targetSet = new Set(normalizedPlayers.map((player) => player.uid))
 
   const matches = source.reduce<DuplicateMatch[]>((accumulator, play) => {
     if (normalizeGame(play.game) !== targetGame) {
@@ -616,8 +645,8 @@ function computeDuplicateMatches(
       }
     }
 
-    const candidatePlayers = play.players.map((player) => player.toLowerCase())
-    const sharedPlayers = candidatePlayers.filter((player) => targetSet.has(player))
+    const candidatePlayers = play.players.map((player) => player.uid)
+    const sharedPlayers = candidatePlayers.filter((playerUid) => targetSet.has(playerUid))
     if (sharedPlayers.length === 0) {
       return accumulator
     }
@@ -760,7 +789,7 @@ export function useDuplicatePlays(duplicateQuery: DuplicateQuery) {
   const serializedPlayers = useMemo(
     () =>
       duplicateQuery.players
-        .map((player) => player.trim().toLowerCase())
+        .map((player) => player.uid)
         .filter(Boolean)
         .sort()
         .join('|'),

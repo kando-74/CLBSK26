@@ -14,6 +14,7 @@ import { getClientDeviceId, logActivity } from './activity'
 import { registerPlay, completePlay } from './plays'
 
 type TableParticipant = {
+  uid: string;
   deviceId: string | null
   name: string
 }

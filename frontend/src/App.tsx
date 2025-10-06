@@ -25,7 +25,7 @@ function App() {
           <Route path="/tablon" element={<BoardPage />} />
           <Route path="/usuarios" element={<UsersDirectory />} />
           <Route path="/perfil" element={<Profile />} />
-          <Route path="/personas/:alias" element={<UserProfilePublic />} />
+          <Route path="/personas/:uid" element={<UserProfilePublic />} />
           <Route path="/organizacion" element={<Organization />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

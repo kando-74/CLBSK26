@@ -1,5 +1,6 @@
 
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useTablesService, type TableRecord } from '../services/tables';
 import { GameTitle } from '../components/GameTitle';
 import { UserLink } from '../components/UserLink';
@@ -41,7 +42,7 @@ export function Calendar() {
           <h3 className="text-lg font-semibold text-text-primary">{date}</h3>
           <div className="space-y-4">
             {tablesInDay.map((table) => (
-              <div key={table.id} className="rounded-2xl border border-primary/20 p-4">
+              <Link to={`/tablon#${table.id}`} key={table.id} className="block rounded-2xl border border-primary/20 p-4 hover:bg-primary/10">
                 <GameTitle name={table.game} coverUrl={table.coverUrl ?? undefined} size="sm" />
                 <p className="text-sm text-text-secondary">Anfitrión: <UserLink name={table.host} /></p>
                 <div className="mt-2 flex items-center gap-4 text-sm text-text-secondary">
@@ -54,7 +55,7 @@ export function Calendar() {
                     <span>{table.room}</span>
                   </div>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </div>

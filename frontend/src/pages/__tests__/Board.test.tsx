@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { Board } from '../Board'
+import { BoardPage } from '../Board'
 import { resetTablesForTests } from '../../services/tables'
 
 vi.mock('../../components/AuthProvider', () => ({
@@ -53,7 +53,7 @@ function renderBoard() {
     </MemoryRouter>
   )
 
-  return render(<Board />, { wrapper: Wrapper })
+  return render(<BoardPage />, { wrapper: Wrapper })
 }
 
 describe('Board page', () => {
