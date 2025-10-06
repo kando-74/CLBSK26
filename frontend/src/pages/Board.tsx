@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useLocation } from 'react-router-dom'
-import { useLocation } from 'react-router-dom'
 import { CalendarCheck, Clock, MapPin, Plus, Sparkles } from 'lucide-react'
 import { GameTitle } from '../components/GameTitle'
 import {

@@ -609,6 +609,18 @@ export type DuplicateQuery = {
   startTime: string
   thresholdMinutes?: number
 }
+
+// ...
+
+export type RegisterPlayInput = {
+  tableId?: string | null
+  game: string
+  players: Player[]
+  startTime: string
+  room: string
+  durationMinutes?: number | null
+  notes?: string | null
+}
 export type DuplicateMatch = {
   play: PlayRecord
   sharedPlayers: number
@@ -681,7 +693,7 @@ function buildDuplicateConstraints(normalizedGame: string, options: { ordered?: 
 }
 
 export async function findPotentialDuplicates(duplicateQuery: DuplicateQuery): Promise<DuplicateMatch[]> {
-  const normalizedPlayers = normalizePlayers(duplicateQuery.players)
+  const normalizedPlayers = normalizePlayers(duplicateQuery.players);
 
   if (!duplicateQuery.game.trim() || normalizedPlayers.length === 0) {
     return []
@@ -730,7 +742,7 @@ export function subscribeDuplicatePlays(
   onUpdate: (matches: DuplicateMatch[]) => void,
   onError?: (message: string) => void,
 ): () => void {
-  const normalizedPlayers = normalizePlayers(duplicateQuery.players)
+  const normalizedPlayers = normalizePlayers(duplicateQuery.players.map(p => ({ uid: p, alias: p })));
 
   if (!duplicateQuery.game.trim() || normalizedPlayers.length === 0) {
     onUpdate([])

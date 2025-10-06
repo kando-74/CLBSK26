@@ -157,7 +157,7 @@ export function UsersDirectory() {
       const startTimestamp = Date.parse(play.startTime ?? '') || 0
 
       play.players.forEach((player) => {
-        const entry = ensureEntry(player)
+        const entry = ensureEntry(player.alias)
         if (!entry) {
           return
         }
@@ -391,7 +391,7 @@ export function UsersDirectory() {
                       {selectedEntry.activePlay.players.map((player, index) => (
                         <span key={`${player}-${index}`}>
                           {index > 0 && ', '}
-                          <UserLink name={player} />
+                          <UserLink player={player} />
                         </span>
                       ))}
                     </p>
@@ -408,7 +408,7 @@ export function UsersDirectory() {
                       {selectedEntry.lastPlay.players.map((player, index) => (
                         <span key={`${player}-${index}`}>
                           {index > 0 && ', '}
-                          <UserLink name={player} />
+                          <UserLink player={player} />
                         </span>
                       ))}
                     </p>
@@ -443,7 +443,7 @@ export function UsersDirectory() {
                             {play.players.map((player, index) => (
                               <span key={`${player}-${index}`}>
                                 {index > 0 && ', '}
-                                <UserLink name={player} />
+                                <UserLink player={player} />
                               </span>
                             ))}
                           </p>

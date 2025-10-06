@@ -86,7 +86,7 @@ export function Statistics() {
 
     plays.forEach((play) => {
       play.players.forEach((player) => {
-        const normalized = player.trim()
+        const normalized = player.alias.trim()
         if (normalized) {
           participantSet.add(normalized)
         }
@@ -138,7 +138,7 @@ export function Statistics() {
     }
 
     return plays.filter((play) =>
-      play.players.some((player) => player.trim().toLowerCase() === normalizedTarget),
+      play.players.some((player) => player.alias.trim().toLowerCase() === normalizedTarget),
     )
   }, [plays])
 
@@ -195,7 +195,7 @@ export function Statistics() {
       current.plays += 1
       current.minutes += play.durationMinutes ?? 0
       play.players.forEach((player) => {
-        const normalized = player.trim()
+        const normalized = player.alias.trim()
         if (normalized) {
           current.players.add(normalized)
         }
@@ -234,7 +234,7 @@ export function Statistics() {
 
     personalPlays.forEach((play) => {
       play.players.forEach((player) => {
-        const normalized = player.trim()
+        const normalized = player.alias.trim()
         if (!normalized || normalized.toLowerCase() === PERSONAL_SAMPLE_NAME.toLowerCase()) {
           return
         }
@@ -341,7 +341,7 @@ export function Statistics() {
 
     personalPlays.forEach((play) => {
       play.players.forEach((player) => {
-        const normalized = player.trim()
+        const normalized = player.alias.trim()
         if (!normalized || normalized.toLowerCase() === normalizedTarget) {
           return
         }

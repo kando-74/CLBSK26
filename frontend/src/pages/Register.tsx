@@ -131,7 +131,7 @@ export function Register() {
       return []
     }
     const target = new Set(selectedPlayers.map((player) => player.toLowerCase()))
-    return mainDuplicate.play.players.filter((player) => target.has(player.toLowerCase()))
+    return mainDuplicate.play.players.filter((player) => target.has(player.alias.toLowerCase()))
   }, [mainDuplicate, selectedPlayers])
 
   const duplicateTimeLabel = mainDuplicate ? formatIsoToTimeLabel(mainDuplicate.play.startTime) : ''
@@ -371,7 +371,7 @@ export function Register() {
                     Existe una partida registrada a las {duplicateTimeLabel}{' '}
                     {formatDifferenceMinutes(mainDuplicate.differenceMinutes)} con{' '}
                     {duplicateSharedPlayers.length > 0
-                      ? renderPlayersInline(duplicateSharedPlayers)
+                      ? renderPlayersInline(duplicateSharedPlayers.map(p => p.alias))
                       : 'jugadores similares'}
                     . Revisa los detalles antes de confirmar.
                   </p>
@@ -379,7 +379,7 @@ export function Register() {
                     <p className="font-semibold text-text-primary">Último registro</p>
                     <p>
                       {mainDuplicate.play.game} • Sala {mainDuplicate.play.room} •{' '}
-                      {renderPlayersInline(mainDuplicate.play.players)}
+                      {renderPlayersInline(mainDuplicate.play.players.map(p => p.alias))}
                     </p>
                   </div>
                 </div>

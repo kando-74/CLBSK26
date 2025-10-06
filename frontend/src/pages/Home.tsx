@@ -212,7 +212,7 @@ export function Home() {
     const set = new Set<string>()
     plays.forEach((play) => {
       play.players.forEach((player) => {
-        const trimmed = player.trim()
+        const trimmed = player.alias.trim()
         if (trimmed) {
           set.add(trimmed.toLowerCase())
         }
@@ -402,7 +402,7 @@ export function Home() {
                       />
                       <p className="text-sm text-text-secondary">
                         <span className="font-semibold text-text-primary">Jugadores:</span>{' '}
-                        {renderPlayersInline(play.players)}
+                        {renderPlayersInline(play.players.map(p => p.alias))}
                       </p>
                       <p className="text-sm text-text-secondary">
                         <span className="font-semibold text-text-primary">Sala:</span> {play.room || 'Por confirmar'}
@@ -467,7 +467,7 @@ export function Home() {
                         Desde {getPlayStartLabel(play)}
                       </span>
                     </div>
-                    <p className="mt-2 text-sm text-text-secondary">{renderPlayersInline(play.players)}</p>
+                    <p className="mt-2 text-sm text-text-secondary">{renderPlayersInline(play.players.map(p => p.alias))}</p>
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-text-secondary">
                       <span>{play.room || 'Sala por confirmar'}</span>
                       <span>{getPlayDurationLabel(play)}</span>
