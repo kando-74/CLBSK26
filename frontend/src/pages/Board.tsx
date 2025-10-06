@@ -14,6 +14,7 @@ import { getDisplayName } from '../utils/user'
 import { TableChat } from '../components/TableChat'
 import { UserLink } from '../components/UserLink'
 import { useLiveEvents } from '../components/LiveEventsProvider'
+import { Tooltip } from '../components/Tooltip'
 
 type FilterState = {
   hideFull: boolean
@@ -350,7 +351,9 @@ function FinishTableDialog({ table, pending, onConfirm, onDismiss }: FinishTable
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <label className="flex flex-col gap-2">
-            <span className="text-xs uppercase tracking-wide text-text-secondary">Resumen del resultado</span>
+            <Tooltip text="Describe quién ganó y cómo. Por ejemplo: 'Ana gana por 3 puntos'">
+              <span className="text-xs uppercase tracking-wide text-text-secondary">Resumen del resultado</span>
+            </Tooltip>
             <textarea
               value={result}
               onChange={(event) => {
@@ -362,7 +365,9 @@ function FinishTableDialog({ table, pending, onConfirm, onDismiss }: FinishTable
             />
           </label>
           <div className="space-y-3">
-            <p className="text-xs uppercase tracking-wide text-text-secondary">Crónicas individuales</p>
+            <Tooltip text="Cada jugador puede escribir un breve comentario sobre la partida.">
+              <p className="text-xs uppercase tracking-wide text-text-secondary">Crónicas individuales</p>
+            </Tooltip>
             {players.map((player) => (
               <label key={`${table.id}-chronicle-${player}`} className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
                 <span className="text-xs font-semibold uppercase tracking-wide text-text-secondary/80">{player}</span>
@@ -404,7 +409,7 @@ function FinishTableDialog({ table, pending, onConfirm, onDismiss }: FinishTable
   )
 }
 
-export const Board: React.FC = () => {
+export const BoardPage: React.FC = () => {
   const { user, profile, localAlias } = useAuth()
   const userDisplayName = useMemo(() => getDisplayName(profile, user, localAlias), [localAlias, profile, user])
   const { tables, loading, error, refresh, createTable, joinTable, startTable, completeTable, cancelTable } = useTablesService()
