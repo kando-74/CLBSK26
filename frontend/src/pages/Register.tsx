@@ -94,7 +94,7 @@ export function Register() {
   const duplicateQuery = useMemo(
     () => ({
       game: selectedGame,
-      players: selectedPlayers,
+      players: selectedPlayers.map((p) => ({ uid: p, alias: p })),
       startTime: toIsoFromTimeLabel(startTime),
       thresholdMinutes: 25,
     }),
@@ -121,7 +121,7 @@ export function Register() {
         .map((player, index) => (
           <span key={`${player}-${index}`}>
             {index > 0 && ', '}
-            <UserLink name={player} />
+            <UserLink player={{ uid: player, alias: player }} />
           </span>
         )),
     [],
@@ -155,7 +155,7 @@ export function Register() {
     try {
       await registerPlay({
         game: trimmedGame,
-        players: selectedPlayers,
+        players: selectedPlayers.map((p) => ({ uid: p, alias: p })),
         startTime: iso,
         room,
         durationMinutes: duration,

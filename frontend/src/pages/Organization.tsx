@@ -436,7 +436,7 @@ export function Organization() {
         .map((name, index) => (
           <span key={`${name}-${index}`}>
             {index > 0 && ', '}
-            <UserLink name={name} />
+            <UserLink player={{ uid: name, alias: name }} />
           </span>
         )),
     [],
@@ -881,7 +881,7 @@ export function Organization() {
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
                         <h3 className="text-lg font-semibold text-text-primary">
-                          <UserLink name={attendee.alias} className="text-text-primary hover:text-primary/80" />
+                          <UserLink player={{ uid: attendee.alias, alias: attendee.alias }} className="text-text-primary hover:text-primary/80" />
                         </h3>
                         <p className="text-sm text-text-secondary">{attendee.email}</p>
                       </div>
@@ -932,7 +932,7 @@ export function Organization() {
                   <div className="flex items-center justify-between">
                     <h3 className="text-base font-semibold text-text-primary">
                       Historial rápido de{' '}
-                      <UserLink name={selectedAttendee.alias} className="text-text-primary hover:text-primary/80" />
+                      <UserLink player={{ uid: selectedAttendee.alias, alias: selectedAttendee.alias }} className="text-text-primary hover:text-primary/80" />
                     </h3>
                     <button
                       onClick={() => setSelectedAttendee(null)}

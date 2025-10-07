@@ -803,7 +803,7 @@ export function Statistics() {
                   {partnerStats.map((partner) => (
                     <li key={partner.name} className="flex items-center justify-between">
                       <div>
-                        <UserLink name={partner.name} className="font-semibold text-text-primary hover:text-primary/80" />
+                        <UserLink player={{ uid: partner.name, alias: partner.name }} className="font-semibold text-text-primary hover:text-primary/80" />
                         <p>{partner.plays} partida(s) en común</p>
                       </div>
                       <span className="rounded-full bg-secondary/20 px-3 py-1 text-xs font-semibold text-secondary">

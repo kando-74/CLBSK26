@@ -98,7 +98,7 @@ function renderUserList(names: string[]) {
     .map((name, index) => (
       <span key={`${name}-${index}`}>
         {index > 0 && ', '}
-        <UserLink name={name} />
+                <UserLink player={{ uid: name, alias: name }} />
       </span>
     ))
 }
@@ -981,7 +981,7 @@ export const BoardPage: React.FC = () => {
                       aria-level={3}
                     >
                       <p className="text-sm font-normal text-text-secondary">
-                        Anfitrión: <UserLink name={table.host} />
+                        Anfitrión: <UserLink player={{ uid: table.host, alias: table.host }} />
                       </p>
                     </GameTitle>
                   </div>
@@ -1020,7 +1020,7 @@ export const BoardPage: React.FC = () => {
                         key={`${table.id}-${participant.deviceId ?? participant.name}`}
                         className="rounded-full bg-background px-3 py-1"
                       >
-                        <UserLink name={participant.name} className="text-text-secondary hover:text-primary" />
+                        <UserLink player={{ uid: participant.uid ?? participant.name, alias: participant.name }} className="text-text-secondary hover:text-primary" />
                       </span>
                     ))}
                   </div>

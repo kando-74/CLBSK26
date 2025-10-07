@@ -115,7 +115,7 @@ function ChatMessageItem({ message }: { message: TableChatMessage }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
           <Users className="h-3.5 w-3.5 text-primary/70" />
-          <UserLink name={message.authorName} />
+          <UserLink player={{ uid: message.authorName, alias: message.authorName }} />
         </div>
         <div className="flex items-center gap-2 text-xs text-text-secondary">
           {isPrivate && (

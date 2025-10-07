@@ -81,7 +81,7 @@ function renderPlayersInline(players: string[]): ReactNode {
   return normalized.map((player, index) => (
     <span key={`${player}-${index}`}>
       {index > 0 && ', '}
-      <UserLink name={player} />
+      <UserLink player={{ uid: player, alias: player }} />
     </span>
   ))
 }
@@ -523,7 +523,7 @@ export function Home() {
                       </div>
                       <p className="mt-2 text-sm text-text-secondary">
                         <span className="font-semibold text-text-primary">Anfitrión:</span>{' '}
-                        <UserLink name={table.host} className="text-text-secondary hover:text-primary" />
+                        <UserLink player={{ uid: table.host, alias: table.host }} className="text-text-secondary hover:text-primary" />
                       </p>
                       <p className="text-sm text-text-secondary">
                         <span className="font-semibold text-text-primary">Sala:</span> {table.room || 'Por confirmar'} ·{' '}

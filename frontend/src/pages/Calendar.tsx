@@ -44,7 +44,7 @@ export function Calendar() {
             {tablesInDay.map((table) => (
               <Link to={`/tablon#${table.id}`} key={table.id} className="block rounded-2xl border border-primary/20 p-4 hover:bg-primary/10">
                 <GameTitle name={table.game} coverUrl={table.coverUrl ?? undefined} size="sm" />
-                <p className="text-sm text-text-secondary">Anfitrión: <UserLink name={table.host} /></p>
+                <p className="text-sm text-text-secondary">Anfitrión: <UserLink player={{ uid: table.host, alias: table.host }} /></p>
                 <div className="mt-2 flex items-center gap-4 text-sm text-text-secondary">
                   <div className="flex items-center gap-2">
                     <Clock className="h-4 w-4" />

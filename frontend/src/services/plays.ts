@@ -50,16 +50,6 @@ export type PlayRecord = {
   endedAt: string | null
 }
 
-export type RegisterPlayInput = {
-  tableId?: string | null
-  game: string
-  players: Player[]
-  startTime: string
-  room: string
-  durationMinutes?: number | null
-  notes?: string | null
-}
-
 export type CompletePlayInput = {
   result: string
   chronicles: PlayChronicles
@@ -742,7 +732,7 @@ export function subscribeDuplicatePlays(
   onUpdate: (matches: DuplicateMatch[]) => void,
   onError?: (message: string) => void,
 ): () => void {
-  const normalizedPlayers = normalizePlayers(duplicateQuery.players.map(p => ({ uid: p, alias: p })));
+  const normalizedPlayers = normalizePlayers(duplicateQuery.players);
 
   if (!duplicateQuery.game.trim() || normalizedPlayers.length === 0) {
     onUpdate([])

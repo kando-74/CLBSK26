@@ -1362,7 +1362,7 @@ export async function startTableEntry(tableId: string, input: StartTableInput): 
   const playRecord = await registerPlay({
     tableId,
     game: table.game,
-    players: playerNames,
+    players: playerNames.map((p) => ({ uid: p, alias: p })),
     startTime: startIso,
     room: resolvedRoom,
     durationMinutes: table.seats.total ? Math.min(table.seats.total * 20, 240) : undefined,
