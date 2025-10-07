@@ -81,6 +81,7 @@ const TABLE_STATUS_META: Record<TableStatus, { label: string; badgeClass: string
 type StartTableDialogProps = {
   table: TableRecord
   pending: boolean
+  busyPlayerUids: Set<string>
   onConfirm: (payload: StartTableInput) => Promise<void>
   onDismiss: () => void
 }
@@ -104,7 +105,7 @@ function renderUserList(names: string[]) {
     ))
 }
 
-function StartTableDialog({ table, pending, onConfirm, onDismiss }: StartTableDialogProps) {
+function StartTableDialog({ table, pending, busyPlayerUids, onConfirm, onDismiss }: StartTableDialogProps) {
   const { users, loading: usersLoading } = useUsers()
   const initialPlayers = useMemo(() => table.participants.map((participant) => participant.name), [table.participants])
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>(initialPlayers)
@@ -144,8 +145,10 @@ function StartTableDialog({ table, pending, onConfirm, onDismiss }: StartTableDi
 
   const potentialPlayers = useMemo(() => {
     const availableNames = new Set(availablePlayers.map((name) => name.toLowerCase()))
-    return users.filter((user) => !availableNames.has(user.alias.toLowerCase()))
-  }, [availablePlayers, users])
+    return users.filter(
+      (user) => !availableNames.has(user.alias.toLowerCase()) && !busyPlayerUids.has(user.uid),
+    )
+  }, [availablePlayers, users, busyPlayerUids])
 
   function togglePlayer(name: string) {
     setSelectedPlayers((current) => {
@@ -503,6 +506,20 @@ export const BoardPage: React.FC = () => {
     () => tables.find((table) => table.id === finishTableId) ?? null,
     [finishTableId, tables],
   )
+
+  const busyPlayerUids = useMemo(() => {
+    const uids = new Set<string>()
+    tables
+      .filter((table) => table.status === 'in-progress')
+      .forEach((table) => {
+        table.currentPlayers.forEach((player) => {
+          if (player.uid) {
+            uids.add(player.uid)
+          }
+        })
+      })
+    return uids
+  }, [tables])
 
 
   function formatTimeFromTimestamp(timestamp: number | null) {
@@ -1147,6 +1164,7 @@ export const BoardPage: React.FC = () => {
         <StartTableDialog
           table={startTargetTable}
           pending={pendingStartId === startTargetTable.id}
+          busyPlayerUids={busyPlayerUids}
           onConfirm={async (payload) => {
             await confirmStart(startTargetTable.id, payload)
           }}
