@@ -16,6 +16,7 @@ import { TableChat } from '../components/TableChat'
 import { UserLink } from '../components/UserLink'
 import { useLiveEvents } from '../components/LiveEventsProvider'
 import { Tooltip } from '../components/Tooltip'
+import { useUsers } from '../services/users'
 
 type FilterState = {
   hideFull: boolean
@@ -104,12 +105,13 @@ function renderUserList(names: string[]) {
 }
 
 function StartTableDialog({ table, pending, onConfirm, onDismiss }: StartTableDialogProps) {
+  const { users, loading: usersLoading } = useUsers()
   const initialPlayers = useMemo(() => table.participants.map((participant) => participant.name), [table.participants])
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>(initialPlayers)
   const [room, setRoom] = useState(table.room)
   const defaultStartMatch = table.start.match(/\d{1,2}:\d{2}/)
   const [startTime, setStartTime] = useState(defaultStartMatch ? defaultStartMatch[0] : '19:00')
-  const [extraPlayer, setExtraPlayer] = useState('')
+  const [playerToAdd, setPlayerToAdd] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -117,7 +119,7 @@ function StartTableDialog({ table, pending, onConfirm, onDismiss }: StartTableDi
     setRoom(table.room)
     const match = table.start.match(/\d{1,2}:\d{2}/)
     setStartTime(match ? match[0] : '19:00')
-    setExtraPlayer('')
+    setPlayerToAdd('')
     setError(null)
   }, [table])
 
@@ -140,6 +142,11 @@ function StartTableDialog({ table, pending, onConfirm, onDismiss }: StartTableDi
     return list
   }, [selectedPlayers, table.participants])
 
+  const potentialPlayers = useMemo(() => {
+    const availableNames = new Set(availablePlayers.map((name) => name.toLowerCase()))
+    return users.filter((user) => !availableNames.has(user.alias.toLowerCase()))
+  }, [availablePlayers, users])
+
   function togglePlayer(name: string) {
     setSelectedPlayers((current) => {
       if (current.includes(name)) {
@@ -149,13 +156,14 @@ function StartTableDialog({ table, pending, onConfirm, onDismiss }: StartTableDi
     })
   }
 
-  function addExtraPlayer() {
-    const trimmed = extraPlayer.trim()
-    if (!trimmed) {
+  function addSelectedPlayer() {
+    const user = users.find((u) => u.uid === playerToAdd)
+    const name = user?.alias
+    if (!name) {
       return
     }
-    setSelectedPlayers((current) => (current.includes(trimmed) ? current : [...current, trimmed]))
-    setExtraPlayer('')
+    setSelectedPlayers((current) => (current.includes(name) ? current : [...current, name]))
+    setPlayerToAdd('')
   }
 
   function toIsoFromTime(value: string): string | undefined {
@@ -237,22 +245,24 @@ function StartTableDialog({ table, pending, onConfirm, onDismiss }: StartTableDi
               })}
             </div>
             <div className="flex items-center gap-2">
-              <input
-                value={extraPlayer}
-                onChange={(event) => setExtraPlayer(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    addExtraPlayer()
-                  }
-                }}
-                placeholder="Añadir jugador extra"
-                className="w-full rounded-full border border-primary/20 px-4 py-2 text-sm text-text-primary outline-none focus:border-primary"
-              />
+              <select
+                value={playerToAdd}
+                onChange={(event) => setPlayerToAdd(event.currentTarget.value)}
+                className="w-full rounded-full border border-primary/20 px-4 py-2 text-sm text-text-primary outline-none focus:border-primary disabled:opacity-50"
+                disabled={usersLoading}
+              >
+                <option value="">{usersLoading ? 'Cargando asistentes...' : 'Selecciona un asistente para añadir'}</option>
+                {potentialPlayers.map((user) => (
+                  <option key={user.uid} value={user.uid}>
+                    {user.alias}
+                  </option>
+                ))}
+              </select>
               <button
                 type="button"
-                onClick={addExtraPlayer}
-                className="rounded-full bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary/90"
+                onClick={addSelectedPlayer}
+                disabled={!playerToAdd}
+                className="rounded-full bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/60"
               >
                 Añadir
               </button>
