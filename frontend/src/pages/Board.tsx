@@ -20,6 +20,7 @@ import { Tooltip } from '../components/Tooltip'
 type FilterState = {
   hideFull: boolean
   hideJoined: boolean
+  hideCompleted: boolean
   room: string
 }
 
@@ -42,6 +43,7 @@ type ActionFeedback = {
 const INITIAL_FILTERS: FilterState = {
   hideFull: false,
   hideJoined: false,
+  hideCompleted: true,
   room: 'Todas',
 }
 
@@ -471,7 +473,7 @@ export const BoardPage: React.FC = () => {
           return table.seats.taken < table.seats.total
         }
 
-        if (table.status === 'in-progress') {
+        if (table.status === 'in-progress' || table.status === 'completed') {
           const hostMatches = table.host.trim().toLowerCase() === normalized && normalized.length > 0
           const participantMatches = table.participants
             .map((participant) => participant.name.trim().toLowerCase())
@@ -535,7 +537,7 @@ export const BoardPage: React.FC = () => {
 
   const createButtonLabel = showCreateForm ? 'Cerrar formulario' : 'Publicar anuncio'
 
-  function handleToggleFilter(key: 'hideFull' | 'hideJoined', value: boolean) {
+  function handleToggleFilter(key: 'hideFull' | 'hideJoined' | 'hideCompleted', value: boolean) {
     setFilters((current) => ({ ...current, [key]: value }))
   }
 
@@ -701,6 +703,7 @@ export const BoardPage: React.FC = () => {
           <span className="rounded-full bg-background px-3 py-1">Sala: {filters.room}</span>
           <span className="rounded-full bg-background px-3 py-1">Ocultar llenas: {filters.hideFull ? 'Sí' : 'No'}</span>
           <span className="rounded-full bg-background px-3 py-1">Ocultar apuntadas: {filters.hideJoined ? 'Sí' : 'No'}</span>
+          <span className="rounded-full bg-background px-3 py-1">Ocultar finalizadas: {filters.hideCompleted ? 'Sí' : 'No'}</span>
         </div>
         <button
           onClick={() => setShowFilters((value) => !value)}
@@ -828,6 +831,15 @@ export const BoardPage: React.FC = () => {
               />
               Ocultar mesas donde ya estás apuntado
             </label>
+            <label className="flex items-center gap-3 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
+              <input
+                type="checkbox"
+                checked={filters.hideCompleted}
+                onChange={(event) => handleToggleFilter('hideCompleted', event.target.checked)}
+                className="h-4 w-4"
+              />
+              Ocultar partidas finalizadas
+            </label>
             <label className="rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
               <span className="block text-xs uppercase tracking-wide">Sala</span>
               <select
@@ -896,7 +908,7 @@ export const BoardPage: React.FC = () => {
           <h3 className="text-lg font-semibold text-text-primary">No hay mesas que coincidan con los filtros</h3>
           <p className="text-sm text-text-secondary">
             Modifica los filtros o publica un anuncio para que otras personas puedan unirse a tu partida.
-          </p>
+          p>
           <button
             onClick={() => setShowCreateForm(true)}
             className="inline-flex items-center gap-2 self-start rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
@@ -1158,6 +1170,10 @@ function mapStatusToTone(status: TableActionStatus): FeedbackTone {
 }
 
 function shouldIncludeTable(table: TableRecord, filters: FilterState) {
+  if (filters.hideCompleted && table.status === 'completed') {
+    return false
+  }
+
   if (filters.hideFull && table.seats.taken >= table.seats.total) {
     return false
   }
