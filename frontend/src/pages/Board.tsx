@@ -113,6 +113,7 @@ function StartTableDialog({ table, pending, busyPlayerUids, onConfirm, onDismiss
   const defaultStartMatch = table.start.match(/\d{1,2}:\d{2}/)
   const [startTime, setStartTime] = useState(defaultStartMatch ? defaultStartMatch[0] : '19:00')
   const [playerToAdd, setPlayerToAdd] = useState('')
+  const [onlyShowAvailable, setOnlyShowAvailable] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -145,10 +146,17 @@ function StartTableDialog({ table, pending, busyPlayerUids, onConfirm, onDismiss
 
   const potentialPlayers = useMemo(() => {
     const availableNames = new Set(availablePlayers.map((name) => name.toLowerCase()))
-    return users.filter(
-      (user) => !availableNames.has(user.alias.toLowerCase()) && !busyPlayerUids.has(user.uid),
-    )
-  }, [availablePlayers, users, busyPlayerUids])
+    return users.filter((user) => {
+      const isAlreadyPlayer = availableNames.has(user.alias.toLowerCase()) || busyPlayerUids.has(user.uid)
+      if (isAlreadyPlayer) {
+        return false
+      }
+      if (onlyShowAvailable) {
+        return user.availableToPlay === true
+      }
+      return true
+    })
+  }, [availablePlayers, users, busyPlayerUids, onlyShowAvailable])
 
   function togglePlayer(name: string) {
     setSelectedPlayers((current) => {
@@ -192,11 +200,20 @@ function StartTableDialog({ table, pending, busyPlayerUids, onConfirm, onDismiss
       return
     }
 
+    const userMap = new Map(users.map((u) => [u.alias.toLowerCase(), u]))
+    const playersPayload: { uid: string; alias: string }[] = selectedPlayers.map((name) => {
+      const user = userMap.get(name.toLowerCase())
+      return {
+        uid: user?.uid ?? name, // Fallback to name as UID for legacy/unmatched players
+        alias: name,
+      }
+    })
+
     const startIso = toIsoFromTime(startTime)
 
     try {
       await onConfirm({
-        players: selectedPlayers,
+        players: playersPayload,
         room,
         startTime: startIso,
       })
@@ -247,28 +264,39 @@ function StartTableDialog({ table, pending, busyPlayerUids, onConfirm, onDismiss
                 )
               })}
             </div>
-            <div className="flex items-center gap-2">
-              <select
-                value={playerToAdd}
-                onChange={(event) => setPlayerToAdd(event.currentTarget.value)}
-                className="w-full rounded-full border border-primary/20 px-4 py-2 text-sm text-text-primary outline-none focus:border-primary disabled:opacity-50"
-                disabled={usersLoading}
-              >
-                <option value="">{usersLoading ? 'Cargando asistentes...' : 'Selecciona un asistente para añadir'}</option>
-                {potentialPlayers.map((user) => (
-                  <option key={user.uid} value={user.uid}>
-                    {user.alias}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={addSelectedPlayer}
-                disabled={!playerToAdd}
-                className="rounded-full bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/60"
-              >
-                Añadir
-              </button>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm text-text-secondary">
+                <input
+                  type="checkbox"
+                  checked={onlyShowAvailable}
+                  onChange={(e) => setOnlyShowAvailable(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                Mostrar solo jugadores disponibles
+              </label>
+              <div className="flex items-center gap-2">
+                <select
+                  value={playerToAdd}
+                  onChange={(event) => setPlayerToAdd(event.currentTarget.value)}
+                  className="w-full rounded-full border border-primary/20 px-4 py-2 text-sm text-text-primary outline-none focus:border-primary disabled:opacity-50"
+                  disabled={usersLoading}
+                >
+                  <option value="">{usersLoading ? 'Cargando asistentes...' : 'Selecciona un asistente para añadir'}</option>
+                  {potentialPlayers.map((user) => (
+                    <option key={user.uid} value={user.uid}>
+                      {user.alias}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={addSelectedPlayer}
+                  disabled={!playerToAdd}
+                  className="rounded-full bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/60"
+                >
+                  Añadir
+                </button>
+              </div>
             </div>
           </div>
           <div className="grid gap-3 md:grid-cols-2">

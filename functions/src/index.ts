@@ -8,6 +8,71 @@ const db = admin.firestore();
 const libraryCollection = db.collection("libraryEntries");
 const activityCollection = db.collection("activityLogs");
 const authorizedEmailsCollection = db.collection("authorizedEmails");
+const boardTablesCollection = db.collection("boardTables");
+
+import { onDocumentUpdated } from "firebase-functions/v2/firestore";
+
+// ... (existing code) ...
+
+export const onUserAliasUpdate = onDocumentUpdated("users/{userId}", async (event) => {
+  const aliasBefore = event.data?.before.data().alias as string | undefined;
+  const aliasAfter = event.data?.after.data().alias as string | undefined;
+
+  if (aliasBefore === aliasAfter) {
+    logger.info(`Alias for ${event.params.userId} not changed. Exiting.`);
+    return;
+  }
+
+  const newAlias = aliasAfter?.trim();
+  if (!newAlias) {
+    logger.info(`New alias for ${event.params.userId} is empty. Exiting.`);
+    return;
+  }
+
+  logger.info(`Alias for ${event.params.userId} changed from "${aliasBefore ?? ""}" to "${newAlias}". Propagating to tables.`);
+
+  const userId = event.params.userId;
+  const batch = db.batch();
+  let tablesUpdated = 0;
+
+  try {
+    const tablesSnapshot = await boardTablesCollection.get();
+
+    tablesSnapshot.forEach((doc) => {
+      const table = doc.data();
+      const participants = table.participants as { uid: string; name: string }[] | undefined;
+
+      if (!participants || !Array.isArray(participants)) {
+        return;
+      }
+
+      let needsUpdate = false;
+      const updatedParticipants = participants.map((participant) => {
+        if (participant.uid === userId && participant.name !== newAlias) {
+          needsUpdate = true;
+          return { ...participant, name: newAlias };
+        }
+        return participant;
+      });
+
+      if (needsUpdate) {
+        batch.update(doc.ref, { participants: updatedParticipants });
+        tablesUpdated++;
+      }
+    });
+
+    if (tablesUpdated > 0) {
+      await batch.commit();
+      logger.info(`Successfully updated alias in ${tablesUpdated} tables for user ${userId}.`);
+    } else {
+      logger.info(`No tables found to update for user ${userId}.`);
+    }
+  } catch (error) {
+    logger.error(`Error propagating alias for user ${userId}:`, error);
+    throw new HttpsError("internal", "Failed to update user alias in tables.");
+  }
+});
+
 
 type WhitelistRole = "asistente" | "staff" | "organizacion";
 type WhitelistStatus = "approved" | "pending" | "revoked";

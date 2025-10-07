@@ -6,6 +6,7 @@ export type User = {
   uid: string;
   alias: string;
   email: string;
+  availableToPlay?: boolean;
 };
 
 type UseUsersState = {
@@ -29,6 +30,7 @@ async function listUsers(): Promise<User[]> {
         uid: doc.id,
         alias: data.alias ?? 'Sin alias',
         email: data.email ?? 'Sin correo',
+        availableToPlay: data.preferences?.availableToPlay ?? false,
       };
     });
   } catch (error) {

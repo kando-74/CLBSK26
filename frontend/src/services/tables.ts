@@ -8,10 +8,11 @@ import {
   query,
   runTransaction,
   setDoc,
+  updateDoc,
 } from 'firebase/firestore'
 import { db } from '../utils/firebase'
 import { getClientDeviceId, logActivity } from './activity'
-import { registerPlay, completePlay } from './plays'
+import { registerPlay, completePlay, type Player } from './plays'
 
 type TableParticipant = {
   uid?: string;
@@ -112,7 +113,7 @@ export type CreateTableInput = {
 }
 
 export type StartTableInput = {
-  players: string[]
+  players: Player[]
   room: string
   startTime?: string
 }
@@ -297,25 +298,7 @@ function normalizeLocalTable(entry: StoredTable | (StoredTable & { joined?: bool
   }
 }
 
-function normalizePlayerNames(names: string[]): string[] {
-  const seen = new Set<string>()
-  const normalized: string[] = []
 
-  names.forEach((name) => {
-    const trimmed = name.trim()
-    if (!trimmed) {
-      return
-    }
-    const key = trimmed.toLowerCase()
-    if (seen.has(key)) {
-      return
-    }
-    seen.add(key)
-    normalized.push(trimmed)
-  })
-
-  return normalized
-}
 
 function formatTimeLabelFromDate(date: Date): string {
   try {
@@ -760,8 +743,8 @@ async function startTableInFirestore(
     }
   }
 
-  const playerNames = normalizePlayerNames(input.players)
-  if (playerNames.length === 0) {
+  const uniquePlayers = Array.from(new Map(input.players.map((p) => [p.uid, p])).values())
+  if (uniquePlayers.length === 0) {
     return {
       status: 'error',
       message: 'Selecciona al menos una persona que vaya a jugar.',
@@ -790,8 +773,7 @@ async function startTableInFirestore(
       }
 
       const rawData = snapshot.data() as FirestoreTable
-      const status = rawData.status ?? 'open'
-      if (status !== 'open') {
+      if ((rawData.status ?? 'open') !== 'open') {
         return {
           status: 'error',
           message: `${rawData.game}: la partida ya está en marcha o finalizada.`,
@@ -805,16 +787,19 @@ async function startTableInFirestore(
       }
 
       const existingParticipants = normalizedData.participants ?? []
-      const seen = new Set(existingParticipants.map((participant) => participant.name.toLowerCase()))
-      playerNames.forEach((name) => {
-        const lower = name.toLowerCase()
-        if (!seen.has(lower)) {
-          existingParticipants.push({ deviceId: null, name })
-          seen.add(lower)
+      const seen = new Set(existingParticipants.map((p) => p.uid).filter((uid): uid is string => !!uid))
+      uniquePlayers.forEach((player) => {
+        if (player.uid && !seen.has(player.uid)) {
+          existingParticipants.push({ deviceId: null, name: player.alias, uid: player.uid })
+          seen.add(player.uid)
         }
       })
 
-      const currentPlayers = playerNames.map((name) => ({ deviceId: null, name }))
+      const currentPlayers: TableParticipant[] = uniquePlayers.map((p) => ({
+        deviceId: null,
+        name: p.alias,
+        uid: p.uid,
+      }))
 
       const updatedData: FirestoreTable = {
         ...normalizedData,
@@ -825,9 +810,6 @@ async function startTableInFirestore(
         room: resolvedRoom || normalizedData.room,
         start: startLabel,
         startedAt: Date.now(),
-        completedAt: null,
-        resultSummary: null,
-        chronicles: {},
         updatedAt: Date.now(),
       }
 
@@ -839,9 +821,6 @@ async function startTableInFirestore(
         room: updatedData.room,
         start: updatedData.start,
         startedAt: updatedData.startedAt,
-        completedAt: null,
-        resultSummary: null,
-        chronicles: {},
         updatedAt: updatedData.updatedAt,
       })
 
@@ -850,7 +829,7 @@ async function startTableInFirestore(
           tableId,
           game: normalizedData.game,
           gameLower: normalizedData.game.trim().toLowerCase(),
-          players: playerNames,
+          players: uniquePlayers,
           room: updatedData.room,
           startTime: startIso,
           durationMinutes: normalizedData.seats?.total ? Math.min(normalizedData.seats.total * 20, 240) : null,
@@ -870,6 +849,19 @@ async function startTableInFirestore(
       }
     })
 
+    if (result.status === 'success') {
+      const playerUids = uniquePlayers.map((p) => p.uid).filter(Boolean)
+      const updates = playerUids.map((uid) => {
+        const userRef = doc(db, 'users', uid)
+        return updateDoc(userRef, { 'preferences.availableToPlay': false })
+      })
+      try {
+        await Promise.all(updates)
+      } catch (error) {
+        console.warn("Failed to update players status to unavailable:", error)
+      }
+    }
+
     void logActivity(
       {
         type: 'table:start',
@@ -878,7 +870,7 @@ async function startTableInFirestore(
         message: 'La partida ha comenzado',
         metadata: {
           room: result.table?.room,
-          players: playerNames.length,
+          players: uniquePlayers.length,
         },
       },
       { deviceId },
@@ -986,6 +978,8 @@ async function completeTableInFirestore(
   const endedAtIso = new Date(completedAt).toISOString()
 
   try {
+    let playersToUpdate: TableParticipant[] = []
+
     const result = await runTransaction<TableActionResult>(db, async (transaction) => {
       const tableRef = doc(tablesCollectionRef, tableId)
       const snapshot = await transaction.get(tableRef)
@@ -1005,6 +999,8 @@ async function completeTableInFirestore(
           data: rawData,
         }
       }
+
+      playersToUpdate = rawData.currentPlayers?.length ? rawData.currentPlayers : rawData.participants ?? []
 
       const updatedData: FirestoreTable = {
         ...rawData,
@@ -1043,6 +1039,19 @@ async function completeTableInFirestore(
         table: mapFirestoreTable(tableId, updatedData, true),
       }
     })
+
+    if (result.status === 'success') {
+      const playerUids = playersToUpdate.map((p) => p.uid).filter((uid): uid is string => !!uid)
+      const updates = playerUids.map((uid) => {
+        const userRef = doc(db, 'users', uid)
+        return updateDoc(userRef, { 'preferences.availableToPlay': true })
+      })
+      try {
+        await Promise.all(updates)
+      } catch (error) {
+        console.warn("Failed to update players status to available:", error)
+      }
+    }
 
     void logActivity(
       {
@@ -1315,8 +1324,8 @@ export async function startTableEntry(tableId: string, input: StartTableInput): 
     return startTableInFirestore(tableId, deviceId, input)
   }
 
-  const playerNames = normalizePlayerNames(input.players)
-  if (playerNames.length === 0) {
+  const uniquePlayers = Array.from(new Map(input.players.map((p) => [p.uid, p])).values())
+  if (uniquePlayers.length === 0) {
     return {
       status: 'error',
       message: 'Selecciona al menos una persona que vaya a jugar.',
@@ -1349,20 +1358,20 @@ export async function startTableEntry(tableId: string, input: StartTableInput): 
 
   const participants = table.participants ?? []
   const knownNames = new Set(participants.map((participant) => participant.name.toLowerCase()))
-  playerNames.forEach((name) => {
-    if (!knownNames.has(name.toLowerCase())) {
-      participants.push({ deviceId: null, name })
-      knownNames.add(name.toLowerCase())
+  uniquePlayers.forEach((player) => {
+    if (!knownNames.has(player.alias.toLowerCase())) {
+      participants.push({ deviceId: null, name: player.alias, uid: player.uid })
+      knownNames.add(player.alias.toLowerCase())
     }
   })
 
-  const currentPlayers = playerNames.map((name) => ({ deviceId: null, name }))
+  const currentPlayers: TableParticipant[] = uniquePlayers.map((p) => ({ deviceId: null, name: p.alias, uid: p.uid }))
   const startedAt = Date.now()
 
   const playRecord = await registerPlay({
     tableId,
     game: table.game,
-    players: playerNames.map((p) => ({ uid: p, alias: p })),
+    players: uniquePlayers,
     startTime: startIso,
     room: resolvedRoom,
     durationMinutes: table.seats.total ? Math.min(table.seats.total * 20, 240) : undefined,
@@ -1383,7 +1392,7 @@ export async function startTableEntry(tableId: string, input: StartTableInput): 
     start: formatTimeLabelFromDate(parsedStart),
     seats: {
       total: table.seats.total,
-      taken: Math.min(table.seats.total, Math.max(playerNames.length, table.seats.taken)),
+      taken: Math.min(table.seats.total, Math.max(uniquePlayers.length, table.seats.taken)),
     },
     joinedByLocal: true,
   }
@@ -1401,7 +1410,7 @@ export async function startTableEntry(tableId: string, input: StartTableInput): 
       message: 'La partida ha comenzado',
       metadata: {
         room: resolvedRoom,
-        players: playerNames.length,
+        players: uniquePlayers.length,
       },
     },
     { deviceId },
