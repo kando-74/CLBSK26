@@ -908,7 +908,7 @@ export const BoardPage: React.FC = () => {
           <h3 className="text-lg font-semibold text-text-primary">No hay mesas que coincidan con los filtros</h3>
           <p className="text-sm text-text-secondary">
             Modifica los filtros o publica un anuncio para que otras personas puedan unirse a tu partida.
-          p>
+          </p>
           <button
             onClick={() => setShowCreateForm(true)}
             className="inline-flex items-center gap-2 self-start rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
