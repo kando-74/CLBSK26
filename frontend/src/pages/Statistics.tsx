@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { ArrowDownToLine, BarChart3, LineChart, Timer, Trophy, Users, Zap } from 'lucide-react'
 import { clsx } from 'clsx'

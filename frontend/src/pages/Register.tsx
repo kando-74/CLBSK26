@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { CalendarClock, ChevronLeft, ChevronRight, Crown } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { registerPlay, useDuplicatePlays } from '../services/plays'

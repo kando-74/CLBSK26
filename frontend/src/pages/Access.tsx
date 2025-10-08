@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import type { FormEvent, JSX } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { clsx } from 'clsx'
@@ -29,12 +29,12 @@ const onboardingSteps = [
   {
     key: 'login',
     title: 'Acceso seguro',
-    description: 'Introduce tu correo autorizado y una contraseña válida.',
+    description: 'Introduce tu correo y contraseña. Si es tu primer acceso, validaremos tu invitación.',
   },
   {
     key: 'verification',
-    title: 'Verificación whitelist',
-    description: 'Comprobamos que perteneces al listado aprobado por la organización.',
+    title: 'Verificando',
+    description: 'Comprobando tus credenciales y autorización.',
   },
   {
     key: 'profile',
@@ -105,99 +105,102 @@ export function Access() {
 
     let cancelled = false
 
-    async function verifyWhitelist() {
+    async function handleVerification() {
       setVerificationStatus('checking')
       setVerificationError(null)
 
+      if (!canSubmitLogin) {
+        setVerificationError('Revisa el correo y la contraseña antes de continuar.')
+        setVerificationStatus('error')
+        return
+      }
+
       try {
-        if (!canSubmitLogin) {
-          throw new Error('Revisa el correo y la contraseña antes de continuar.')
-        }
+        // 1. Intenta hacer login directamente.
+        const { user: signedUser } = await signInWithEmailAndPassword(auth, normalizedEmail, password)
 
-        const whitelistRef = doc(db, 'authorizedEmails', normalizedEmail)
-        const whitelistSnap = await getDoc(whitelistRef)
-
-        if (!whitelistSnap.exists()) {
-          throw new Error('Tu correo no forma parte de la whitelist habilitada para el evento.')
-        }
-
-        const whitelistData = whitelistSnap.data()
-        const entry = mapAuthorizedEntry(normalizedEmail, whitelistData)
-
-        if (!cancelled) {
-          setAuthorizedEntry(entry)
-        }
-
-        if (entry.status === 'revoked') {
-          throw new Error('Tu acceso ha sido revocado por la organización. Si crees que es un error, contacta con el equipo.')
-        }
-
-        if (entry.status === 'pending') {
-          throw new Error('Tu invitación todavía está pendiente de aprobación. Vuelve a intentarlo cuando la organización la active.')
-        }
-
-        // 2. Si está autorizado, intentar el login o crear el usuario
-        let currentUser = auth.currentUser
-        const isDifferentUser = currentUser?.email?.toLowerCase() !== normalizedEmail
-
-        if (!currentUser || isDifferentUser) {
-          try {
-            const { user: signedUser } = await signInWithEmailAndPassword(auth, normalizedEmail, password)
-            currentUser = signedUser
-          } catch (error) {
-            const mapped = mapAuthError(error)
-            if (mapped.code === 'auth/user-not-found') {
-              const { user: createdUser } = await createUserWithEmailAndPassword(auth, normalizedEmail, password)
-              currentUser = createdUser
-            } else {
-              throw new Error(mapped.message)
-            }
-          }
-        }
-
-        if (!currentUser) {
-          throw new Error('No se pudo establecer tu sesión. Intenta de nuevo en unos segundos.')
-        }
-
-        const profileRef = doc(db, 'users', currentUser.uid)
+        // Si el login es exitoso, es un usuario existente.
+        const profileRef = doc(db, 'users', signedUser.uid)
         const profileSnap = await getDoc(profileRef)
 
-        if (!cancelled) {
-          if (profileSnap.exists()) {
-            const data = profileSnap.data()
-            setAlias((prev) => prev || data.alias || entry.displayName || normalizedEmail.split('@')[0])
-            setFullName(data.fullName ?? '')
-            setLanguage((data.language as LanguageOption | undefined) ?? 'es')
-            setConsent(Boolean(data.consentAt))
-          } else {
-            setAlias((prev) => prev || entry.displayName || normalizedEmail.split('@')[0])
-            setFullName('')
-            setConsent(false)
-          }
+        if (cancelled) return
 
+        if (profileSnap.exists() && profileSnap.data().consentAt) {
+          // El perfil existe y está completo, redirigir a la app.
+          setVerificationStatus('success')
+          navigate('/')
+        } else {
+          // El perfil no existe o está incompleto, llevar al paso de perfil.
+          const data = profileSnap.data()
+          const entry = mapAuthorizedEntry(normalizedEmail, data)
+          setAuthorizedEntry(entry)
+          setAlias((prev) => prev || data?.alias || entry.displayName || normalizedEmail.split('@')[0])
+          setFullName(data?.fullName ?? '')
+          setLanguage((data?.language as LanguageOption | undefined) ?? 'es')
+          setConsent(Boolean(data?.consentAt))
           setProfilePrefilled(false)
           setVerificationStatus('success')
           setCurrentStep('profile')
         }
       } catch (error) {
-        if (cancelled) {
-          return
-        }
+        const mappedError = mapAuthError(error)
 
-        setVerificationStatus('error')
-        setVerificationError(error instanceof Error ? error.message : 'No se pudo validar tu acceso. Intenta nuevamente.')
-        if (auth.currentUser && auth.currentUser.email?.toLowerCase() !== normalizedEmail) {
-          signOut(auth).catch(() => undefined)
+        if (mappedError.code === 'auth/user-not-found') {
+          // 2. Si el usuario no existe, es un registro nuevo. Verificar whitelist.
+          try {
+            const whitelistRef = doc(db, 'authorizedEmails', normalizedEmail)
+            const whitelistSnap = await getDoc(whitelistRef)
+
+            if (cancelled) return
+
+            if (!whitelistSnap.exists()) {
+              throw new Error('Tu correo no está en la lista de personas autorizadas para registrarse.')
+            }
+
+            const whitelistData = whitelistSnap.data()
+            const entry = mapAuthorizedEntry(normalizedEmail, whitelistData)
+            setAuthorizedEntry(entry)
+
+            if (entry.status === 'revoked') {
+              throw new Error('Tu acceso ha sido revocado. Contacta con la organización.')
+            }
+            if (entry.status === 'pending') {
+              throw new Error('Tu invitación aún está pendiente de aprobación.')
+            }
+
+            // 3. Si está en la whitelist, crear el usuario en Firebase Auth.
+            await createUserWithEmailAndPassword(auth, normalizedEmail, password)
+            if (cancelled) return
+
+            // Llevar al paso de perfil para el nuevo usuario.
+            setAlias((prev) => prev || entry.displayName || normalizedEmail.split('@')[0])
+            setFullName('')
+            setConsent(false)
+            setProfilePrefilled(false)
+            setVerificationStatus('success')
+            setCurrentStep('profile')
+          } catch (whitelistError) {
+            if (cancelled) return
+            setVerificationStatus('error')
+            setVerificationError(
+              whitelistError instanceof Error ? whitelistError.message : 'Error al verificar la autorización.',
+            )
+          }
+        } else {
+          // Otro tipo de error de autenticación (contraseña incorrecta, etc.)
+          if (cancelled) return
+          setVerificationStatus('error')
+          setVerificationError(mappedError.message)
         }
       }
     }
 
-    verifyWhitelist()
+    handleVerification()
 
     return () => {
       cancelled = true
     }
-  }, [canSubmitLogin, currentStep, normalizedEmail, password, verificationAttempt])
+  }, [canSubmitLogin, currentStep, normalizedEmail, password, verificationAttempt, navigate])
 
   useEffect(() => {
     if (showLoginErrors && canSubmitLogin) {
