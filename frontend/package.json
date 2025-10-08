@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
-    "test": "vitest"
+    "test": "vitest",
+    "typecheck": "tsc --noEmit --project tsconfig.json"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.2",
@@ -36,7 +37,7 @@
     "jsdom": "^27.0.0",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.3",
-    "typescript": "^5.2.2",
+    "typescript": "5.9.3",
     "vite": "^5.2.0",
     "vitest": "^1.6.0"
   }

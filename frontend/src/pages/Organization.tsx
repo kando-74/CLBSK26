@@ -428,20 +428,6 @@ export function Organization() {
     [roomSummary],
   )
 
-  const renderPlayersInline = useCallback(
-    (names: string[]) =>
-      names
-        .map((name) => name.trim())
-        .filter((name) => name.length > 0)
-        .map((name, index) => (
-          <span key={`${name}-${index}`}>
-            {index > 0 && ', '}
-            <UserLink player={{ uid: name, alias: name }} />
-          </span>
-        )),
-    [],
-  )
-
   useEffect(() => {
     if (!panelMessage) {
       return
@@ -1031,7 +1017,12 @@ export function Organization() {
                       aria-level={3}
                     >
                       <p className="text-sm font-normal text-text-secondary">
-                        {renderPlayersInline(duplicate.players)} · Coincidencia {duplicate.similarity}%
+                        {duplicate.players.map((name, index) => (
+                          <span key={`${name}-${index}`}>
+                            {index > 0 && ', '}
+                            <UserLink player={{ uid: name, alias: name }} />
+                          </span>
+                        ))} · Coincidencia {duplicate.similarity}%
                       </p>
                     </GameTitle>
                     <div className="flex flex-wrap gap-2">

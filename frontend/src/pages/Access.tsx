@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent, JSX } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { clsx } from 'clsx'
-import { type AuthError as FirebaseAuthError } from 'firebase/auth'
+import { type Auth, type AuthError as FirebaseAuthError } from 'firebase/auth'
 import {
   ArrowLeft,
   ArrowRight,
@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth'
 import { doc, getDoc, serverTimestamp, setDoc, type DocumentData } from 'firebase/firestore'
-import { auth, db } from '../utils/firebase'
+import { initializeAuth, db } from '../utils/firebase'
 import { useAuth } from '../components/AuthProvider'
 import type { WhitelistStatus } from '../services/whitelist'
 
@@ -60,7 +60,7 @@ const SUPPORT_EMAIL = 'soporte@juegoscongreso.com'
 export function Access() {
   const navigate = useNavigate()
   const { user, profile } = useAuth()
-
+  const [auth, setAuth] = useState<Auth | null>(null)
   const [currentStep, setCurrentStep] = useState<StepKey>('welcome')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -81,8 +81,9 @@ export function Access() {
   const [resetError, setResetError] = useState<string | null>(null)
 
   const activeIndex = onboardingSteps.findIndex((step) => step.key === currentStep)
-  const activeStep = onboardingSteps[activeIndex]
-  const progress = ((activeIndex + 1) / onboardingSteps.length) * 100
+  const safeIndex = activeIndex >= 0 ? activeIndex : 0
+  const activeStep = onboardingSteps[safeIndex]
+  const progress = ((safeIndex + 1) / onboardingSteps.length) * 100
 
   const normalizedEmail = useMemo(() => email.trim().toLowerCase(), [email])
   const isEmailValid = useMemo(() => /.+@.+\..+/.test(email), [email])
@@ -92,6 +93,10 @@ export function Access() {
   const canFinishProfile = isAliasValid && consent && !savingProfile
 
   useEffect(() => {
+    initializeAuth().then(setAuth)
+  }, [])
+
+  useEffect(() => {
     if (user?.email && currentStep === 'welcome') {
       setEmail(user.email)
       setCurrentStep('profile')
@@ -99,7 +104,7 @@ export function Access() {
   }, [currentStep, user])
 
   useEffect(() => {
-    if (currentStep !== 'verification') {
+    if (currentStep !== 'verification' || !auth) {
       return
     }
 
@@ -136,7 +141,6 @@ export function Access() {
           throw new Error('Tu invitación todavía está pendiente de aprobación. Vuelve a intentarlo cuando la organización la active.')
         }
 
-        // 2. Si está autorizado, intentar el login o crear el usuario
         let currentUser = auth.currentUser
         const isDifferentUser = currentUser?.email?.toLowerCase() !== normalizedEmail
 
@@ -186,7 +190,7 @@ export function Access() {
 
         setVerificationStatus('error')
         setVerificationError(error instanceof Error ? error.message : 'No se pudo validar tu acceso. Intenta nuevamente.')
-        if (auth.currentUser && auth.currentUser.email?.toLowerCase() !== normalizedEmail) {
+        if (auth?.currentUser && auth.currentUser.email?.toLowerCase() !== normalizedEmail) {
           signOut(auth).catch(() => undefined)
         }
       }
@@ -197,7 +201,7 @@ export function Access() {
     return () => {
       cancelled = true
     }
-  }, [canSubmitLogin, currentStep, normalizedEmail, password, verificationAttempt])
+  }, [canSubmitLogin, currentStep, normalizedEmail, password, verificationAttempt, auth])
 
   useEffect(() => {
     if (showLoginErrors && canSubmitLogin) {
@@ -244,7 +248,7 @@ export function Access() {
   }, [alias, fullName, language, consent])
 
   async function handlePasswordReset() {
-    if (!isEmailValid) {
+    if (!isEmailValid || !auth) {
       setShowLoginErrors(true)
       setResetStatus('error')
       setResetError('Introduce un correo válido antes de solicitar el reinicio de contraseña.')
@@ -291,14 +295,16 @@ export function Access() {
   const handleBackToLogin = () => {
     setVerificationStatus('idle')
     setVerificationError(null)
-    signOut(auth).catch(() => undefined)
+    if (auth) {
+      signOut(auth).catch(() => undefined)
+    }
     setCurrentStep('login')
   }
 
   const handleProfileSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
-    if (!canFinishProfile || !auth.currentUser) {
+    if (!canFinishProfile || !auth?.currentUser) {
       return
     }
 

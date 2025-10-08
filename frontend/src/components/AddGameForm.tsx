@@ -64,22 +64,19 @@ export function AddGameForm({ eventId = 'main-event' }: { eventId?: string }) {
     }
   }
 
-  async function handleImport(bggId: number, yearPublished?: number) {
+  async function handleImport(bggId: number, name: string, yearPublished?: number) {
     addGameMutation.reset()
     try {
-      // Obtenemos detalles completos para tener la mejor info posible
-      const details = await getBoardGameDetails(bggId)
-      const resolvedYear = yearPublished ?? undefined
-      const resolvedDuration = details.playingTime || details.maxPlaytime || details.minPlaytime || undefined
-      const resolvedWeight = details.averageWeight && details.averageWeight > 0 ? details.averageWeight : undefined
+      // La función 'addLibraryEntry' ya se encarga de buscar detalles y cachear.
+      // Le pasamos los datos básicos para una respuesta optimista y para la búsqueda en el backend.
       await addGameMutation.mutateAsync({
         eventId,
         language,
-        bggId: details.id,
+        bggId,
         bggData: {
-          name: details.name,
-          thumbnail: details.thumbnailUrl ?? details.imageUrl,
-          yearPublished: resolvedYear,
+          name,
+          // El thumbnail y otros detalles se enriquecerán en el backend.
+          yearPublished: yearPublished ?? undefined,
         },
         entry: {
           yearPublished: resolvedYear ?? null,
@@ -159,7 +156,7 @@ export function AddGameForm({ eventId = 'main-event' }: { eventId?: string }) {
                   </p>
                 </div>
                 <button
-                  onClick={() => handleImport(result.id, result.yearPublished)}
+                  onClick={() => handleImport(result.id, result.name, result.yearPublished)}
                   disabled={isImportingThis || addGameMutation.isSuccess}
                   className="btn-secondary inline-flex items-center justify-center gap-2 text-xs"
                 >

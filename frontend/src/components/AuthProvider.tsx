@@ -1,8 +1,13 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { onAuthStateChanged, signOut as firebaseSignOut, type User } from 'firebase/auth'
+import {
+  onAuthStateChanged,
+  signOut as firebaseSignOut,
+  type User,
+  type Auth,
+} from 'firebase/auth'
 import { doc, onSnapshot, type DocumentData } from 'firebase/firestore'
-import { auth, db } from '../utils/firebase'
+import { initializeAuth, db } from '../utils/firebase'
 import { getLocalAlias, setLocalAlias, subscribeLocalAlias } from '../utils/localIdentity'
 
 type LanguageOption = 'es' | 'en'
@@ -50,12 +55,17 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [auth, setAuth] = useState<Auth | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [profileLoading, setProfileLoading] = useState(true)
   const [authorized, setAuthorized] = useState<AuthorizedEntry | null>(null)
   const [localAlias, setLocalAliasState] = useState<string | null>(() => getLocalAlias())
+
+  useEffect(() => {
+    initializeAuth().then(setAuth)
+  }, [])
 
   useEffect(() => {
     const unsubscribe = subscribeLocalAlias((alias) => {
@@ -66,13 +76,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    if (!auth) {
+      return
+    }
     const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
       setUser(nextUser)
       setLoading(false)
     })
 
     return unsubscribe
-  }, [])
+  }, [auth])
 
   useEffect(() => {
     if (!user) {
@@ -143,9 +156,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLocalAlias(normalized || null)
         setLocalAliasState(normalized ? normalized : null)
       },
-      signOut: () => firebaseSignOut(auth),
+      signOut: () => (auth ? firebaseSignOut(auth) : Promise.resolve()),
     }),
-    [authorized, localAlias, loading, profile, profileLoading, user],
+    [auth, authorized, localAlias, loading, profile, profileLoading, user],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

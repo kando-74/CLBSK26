@@ -76,12 +76,12 @@ function formatMinutesLabel(totalMinutes: number): string {
   return `${hours} h ${minutes} min`
 }
 
-function renderPlayersInline(players: string[]): ReactNode {
-  const normalized = players.map((player) => player.trim()).filter((player) => player.length > 0)
+function renderPlayersInline(players: { uid: string; alias: string }[]): ReactNode {
+  const normalized = players.filter((player) => player.alias.trim().length > 0)
   return normalized.map((player, index) => (
-    <span key={`${player}-${index}`}>
+    <span key={`${player.uid}-${index}`}>
       {index > 0 && ', '}
-      <UserLink player={{ uid: player, alias: player }} />
+      <UserLink player={player} />
     </span>
   ))
 }
@@ -402,7 +402,7 @@ export function Home() {
                       />
                       <p className="text-sm text-text-secondary">
                         <span className="font-semibold text-text-primary">Jugadores:</span>{' '}
-                        {renderPlayersInline(play.players.map(p => p.alias))}
+                        {renderPlayersInline(play.players)}
                       </p>
                       <p className="text-sm text-text-secondary">
                         <span className="font-semibold text-text-primary">Sala:</span> {play.room || 'Por confirmar'}
@@ -467,7 +467,7 @@ export function Home() {
                         Desde {getPlayStartLabel(play)}
                       </span>
                     </div>
-                    <p className="mt-2 text-sm text-text-secondary">{renderPlayersInline(play.players.map(p => p.alias))}</p>
+                    <p className="mt-2 text-sm text-text-secondary">{renderPlayersInline(play.players)}</p>
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-text-secondary">
                       <span>{play.room || 'Sala por confirmar'}</span>
                       <span>{getPlayDurationLabel(play)}</span>
@@ -525,7 +525,7 @@ export function Home() {
                         <span className="font-semibold text-text-primary">Anfitrión:</span>{' '}
                         <UserLink player={{ uid: table.host, alias: table.host }} className="text-text-secondary hover:text-primary" />
                       </p>
-                      <p className="text-sm text-text-secondary">
+                      <p className="mt-1 text-sm text-text-secondary">
                         <span className="font-semibold text-text-primary">Sala:</span> {table.room || 'Por confirmar'} ·{' '}
                         <span className="font-semibold text-text-primary">Inicio:</span> {table.start || 'Próximamente'}
                       </p>
@@ -533,7 +533,7 @@ export function Home() {
                         {table.seats.taken}/{table.seats.total} personas anotadas
                       </p>
                       {participants.length > 0 ? (
-                        <p className="mt-1 text-xs text-text-secondary">{renderPlayersInline(participants)}</p>
+                        <p className="mt-1 text-xs text-text-secondary">{renderPlayersInline(participants.map(p => ({ uid: p, alias: p })))}</p>
                       ) : null}
                     </article>
                   )
@@ -568,7 +568,7 @@ export function Home() {
                         <span className="font-semibold text-text-primary">Sala:</span> {table.room || 'Por confirmar'}
                       </p>
                       {players.length > 0 ? (
-                        <p className="text-xs text-text-secondary">{renderPlayersInline(players)}</p>
+                        <p className="mt-1 text-xs text-text-secondary">{renderPlayersInline(players.map(p => ({ uid: p, alias: p })))}</p>
                       ) : null}
                     </article>
                   )

@@ -9,7 +9,7 @@ import {
   type QueryConstraint,
 } from 'firebase/firestore'
 import type { DocumentData, QueryDocumentSnapshot } from 'firebase/firestore'
-import { auth, db } from '../utils/firebase'
+import { db, initializeAuth } from '../utils/firebase'
 
 const ACTIVITY_COLLECTION = 'activityLogs'
 const DEVICE_ID_STORAGE_KEY = 'clbsk_board_device_id_v1'
@@ -83,6 +83,7 @@ export async function logActivity(
   }
 
   try {
+    const auth = await initializeAuth()
     const user = auth.currentUser
 
     await addDoc(activityCollectionRef, {

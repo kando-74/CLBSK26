@@ -1,10 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
-import { AppShell } from './components/AppShell'
-import { Library } from './pages/Library'
-import { Register } from './pages/Register'
-import { BoardPage } from './pages/Board'
-import { Profile } from './pages/Profile'
-import { Statistics } from './pages/Statistics'
+
 import { Access } from './pages/Access'
 import { Calendar } from './pages/Calendar'
 import { Organization } from './pages/Organization'
