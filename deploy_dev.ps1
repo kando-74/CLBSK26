@@ -77,12 +77,7 @@ export default defineConfig({ plugins: [react()] });
   }
 }
 
-# 5) Build
-Write-Host "3) Compilar frontend"
-Set-Location .\frontend
-npm ci
-npm run build
-Set-Location ..
+# 5) Build (manejado por firebase.json predeploy)
 
 # 6) Contar ficheros generados
 $files = (Get-ChildItem -Recurse .\frontend\dist -File | Measure-Object).Count
