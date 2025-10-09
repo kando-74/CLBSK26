@@ -42,6 +42,7 @@ type AuthContextValue = {
   profile: UserProfile | null
   profileLoading: boolean
   authorized: AuthorizedEntry | null
+  authorizedLoading: boolean
   localAlias: string | null
   updateLocalAlias: (alias: string) => void
   signOut: () => Promise<void>
@@ -55,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [profileLoading, setProfileLoading] = useState(true)
   const [authorized, setAuthorized] = useState<AuthorizedEntry | null>(null)
+  const [authorizedLoading, setAuthorizedLoading] = useState(false)
   const [localAlias, setLocalAliasState] = useState<string | null>(() => getLocalAlias())
 
   useEffect(() => {
@@ -79,10 +81,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(null)
       setProfileLoading(false)
       setAuthorized(null)
+      setAuthorizedLoading(false)
       return
     }
 
     setProfileLoading(true)
+    setAuthorizedLoading(true)
     const profileRef = doc(db, 'users', user.uid)
     const unsubscribeProfile = onSnapshot(
       profileRef,
@@ -107,6 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const email = user.email?.toLowerCase()
     if (!email) {
       setAuthorized(null)
+      setAuthorizedLoading(false)
       return () => {
         unsubscribeProfile()
       }
@@ -118,9 +123,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       (snapshot) => {
         const data = snapshot.data()
         setAuthorized(data ? mapAuthorized(data) : null)
+        setAuthorizedLoading(false)
       },
       () => {
         setAuthorized(null)
+        setAuthorizedLoading(false)
       },
     )
 
@@ -137,6 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile,
       profileLoading,
       authorized,
+      authorizedLoading,
       localAlias,
       updateLocalAlias: (alias: string) => {
         const normalized = alias.trim()
@@ -145,7 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       signOut: () => firebaseSignOut(auth),
     }),
-    [authorized, localAlias, loading, profile, profileLoading, user],
+    [authorized, authorizedLoading, localAlias, loading, profile, profileLoading, user],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

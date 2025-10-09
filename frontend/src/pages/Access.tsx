@@ -1,315 +1,180 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import type { FormEvent, JSX } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { clsx } from 'clsx'
-import { type AuthError as FirebaseAuthError } from 'firebase/auth'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle2,
-  Loader2,
-  MailCheck,
-  ShieldAlert,
-  ShieldCheck,
-  Sparkles,
-  UserRound,
-} from 'lucide-react'
-import { createUserWithEmailAndPassword, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth'
-import { doc, getDoc, serverTimestamp, setDoc, type DocumentData } from 'firebase/firestore'
+  GoogleAuthProvider,
+  getRedirectResult,
+  signInWithRedirect,
+  signOut as firebaseSignOut,
+  type AuthError as FirebaseAuthError,
+} from 'firebase/auth'
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
+import { ArrowLeft, Loader2, LogOut, ShieldAlert, ShieldCheck, UserRound } from 'lucide-react'
 import { auth, db } from '../utils/firebase'
 import { useAuth } from '../components/AuthProvider'
-import type { WhitelistStatus } from '../services/whitelist'
 
-const onboardingSteps = [
-  {
-    key: 'welcome',
-    title: 'Bienvenida',
-    description: 'Descubre cómo funciona el evento privado antes de iniciar sesión.',
-  },
-  {
-    key: 'login',
-    title: 'Acceso seguro',
-    description: 'Introduce tu correo y contraseña. Si es tu primer acceso, validaremos tu invitación.',
-  },
-  {
-    key: 'verification',
-    title: 'Verificando',
-    description: 'Comprobando tus credenciales y autorización.',
-  },
-  {
-    key: 'profile',
-    title: 'Perfil inicial',
-    description: 'Define alias, idioma y consentimiento antes de entrar a la app.',
-  },
-] as const
-
-type StepKey = (typeof onboardingSteps)[number]['key']
 type LanguageOption = 'es' | 'en'
-
-type VerificationStatus = 'idle' | 'checking' | 'success' | 'error'
-
-type AuthorizedEntry = {
-  email: string
-  role?: string
-  displayName?: string
-  status?: WhitelistStatus
-}
-
-const SUPPORT_EMAIL = 'soporte@juegoscongreso.com'
 
 export function Access() {
   const navigate = useNavigate()
-  const { user, profile } = useAuth()
+  const location = useLocation()
+  const { user, loading, profile, profileLoading, authorized, authorizedLoading } = useAuth()
 
-  const [currentStep, setCurrentStep] = useState<StepKey>('welcome')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [googleError, setGoogleError] = useState<string | null>(null)
+  const [redirectHandled, setRedirectHandled] = useState(false)
+  const [googleTriggered, setGoogleTriggered] = useState(false)
+
   const [alias, setAlias] = useState('')
   const [fullName, setFullName] = useState('')
   const [language, setLanguage] = useState<LanguageOption>('es')
   const [consent, setConsent] = useState(false)
-  const [showLoginErrors, setShowLoginErrors] = useState(false)
-  const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>('idle')
-  const [verificationAttempt, setVerificationAttempt] = useState(0)
-  const [verificationError, setVerificationError] = useState<string | null>(null)
-  const [profileSaved, setProfileSaved] = useState(false)
-  const [savingProfile, setSavingProfile] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [authorizedEntry, setAuthorizedEntry] = useState<AuthorizedEntry | null>(null)
-  const [profilePrefilled, setProfilePrefilled] = useState(false)
-  const [resetStatus, setResetStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
-  const [resetError, setResetError] = useState<string | null>(null)
+  const [prefilled, setPrefilled] = useState(false)
 
-  const activeIndex = onboardingSteps.findIndex((step) => step.key === currentStep)
-  const activeStep = onboardingSteps[activeIndex]
-  const progress = ((activeIndex + 1) / onboardingSteps.length) * 100
+  const redirectTo = useMemo(() => {
+    const state = location.state as { from?: string } | undefined
+    return state?.from ?? '/'
+  }, [location.state])
 
-  const normalizedEmail = useMemo(() => email.trim().toLowerCase(), [email])
-  const isEmailValid = useMemo(() => /.+@.+\..+/.test(email), [email])
-  const isPasswordValid = password.trim().length >= 8
-  const canSubmitLogin = isEmailValid && isPasswordValid
-  const isAliasValid = alias.trim().length >= 2
-  const canFinishProfile = isAliasValid && consent && !savingProfile
+  const profileComplete = Boolean(profile?.alias && profile?.consentAt)
+  const whitelistStatus = authorized?.status ?? null
+  const isApproved = whitelistStatus === 'approved'
+  const isPending = whitelistStatus === 'pending'
+  const isRevoked = whitelistStatus === 'revoked'
+  const isUnauthorized = Boolean(user) && !authorizedLoading && (!authorized || isRevoked)
 
-  useEffect(() => {
-    if (user?.email && currentStep === 'welcome') {
-      setEmail(user.email)
-      setCurrentStep('profile')
-    }
-  }, [currentStep, user])
-
-  useEffect(() => {
-    if (currentStep !== 'verification') {
-      return
-    }
-
-    let cancelled = false
-
-    async function handleVerification() {
-      setVerificationStatus('checking')
-      setVerificationError(null)
-
-      if (!canSubmitLogin) {
-        setVerificationError('Revisa el correo y la contraseña antes de continuar.')
-        setVerificationStatus('error')
-        return
-      }
-
+  const startGoogleSignIn = useCallback(
+    async (forceSelect = false) => {
       try {
-        // 1. Intenta hacer login directamente.
-        const { user: signedUser } = await signInWithEmailAndPassword(auth, normalizedEmail, password)
-
-        // Si el login es exitoso, es un usuario existente.
-        const profileRef = doc(db, 'users', signedUser.uid)
-        const profileSnap = await getDoc(profileRef)
-
-        if (cancelled) return
-
-        if (profileSnap.exists() && profileSnap.data().consentAt) {
-          // El perfil existe y está completo, redirigir a la app.
-          setVerificationStatus('success')
-          navigate('/')
-        } else {
-          // El perfil no existe o está incompleto, llevar al paso de perfil.
-          const data = profileSnap.data()
-          const entry = mapAuthorizedEntry(normalizedEmail, data)
-          setAuthorizedEntry(entry)
-          setAlias((prev) => prev || data?.alias || entry.displayName || normalizedEmail.split('@')[0])
-          setFullName(data?.fullName ?? '')
-          setLanguage((data?.language as LanguageOption | undefined) ?? 'es')
-          setConsent(Boolean(data?.consentAt))
-          setProfilePrefilled(false)
-          setVerificationStatus('success')
-          setCurrentStep('profile')
+        setGoogleError(null)
+        setGoogleTriggered(true)
+        const provider = new GoogleAuthProvider()
+        if (forceSelect) {
+          provider.setCustomParameters({ prompt: 'select_account' })
         }
+        await signInWithRedirect(auth, provider)
       } catch (error) {
-        const mappedError = mapAuthError(error)
+        console.error('Google sign-in failed', error)
+        setGoogleError(mapGoogleSignInError(error))
+      }
+    },
+    [],
+  )
 
-        if (mappedError.code === 'auth/user-not-found') {
-          // 2. Si el usuario no existe, es un registro nuevo. Verificar whitelist.
-          try {
-            const whitelistRef = doc(db, 'authorizedEmails', normalizedEmail)
-            const whitelistSnap = await getDoc(whitelistRef)
+  useEffect(() => {
+    if (redirectHandled) {
+      return
+    }
 
-            if (cancelled) return
-
-            if (!whitelistSnap.exists()) {
-              throw new Error('Tu correo no está en la lista de personas autorizadas para registrarse.')
-            }
-
-            const whitelistData = whitelistSnap.data()
-            const entry = mapAuthorizedEntry(normalizedEmail, whitelistData)
-            setAuthorizedEntry(entry)
-
-            if (entry.status === 'revoked') {
-              throw new Error('Tu acceso ha sido revocado. Contacta con la organización.')
-            }
-            if (entry.status === 'pending') {
-              throw new Error('Tu invitación aún está pendiente de aprobación.')
-            }
-
-            // 3. Si está en la whitelist, crear el usuario en Firebase Auth.
-            await createUserWithEmailAndPassword(auth, normalizedEmail, password)
-            if (cancelled) return
-
-            // Llevar al paso de perfil para el nuevo usuario.
-            setAlias((prev) => prev || entry.displayName || normalizedEmail.split('@')[0])
-            setFullName('')
-            setConsent(false)
-            setProfilePrefilled(false)
-            setVerificationStatus('success')
-            setCurrentStep('profile')
-          } catch (whitelistError) {
-            if (cancelled) return
-            setVerificationStatus('error')
-            setVerificationError(
-              whitelistError instanceof Error ? whitelistError.message : 'Error al verificar la autorización.',
-            )
-          }
-        } else {
-          // Otro tipo de error de autenticación (contraseña incorrecta, etc.)
-          if (cancelled) return
-          setVerificationStatus('error')
-          setVerificationError(mappedError.message)
+    getRedirectResult(auth)
+      .then(() => {
+        setRedirectHandled(true)
+      })
+      .catch((error) => {
+        if (isFirebaseAuthError(error) && error.code === 'auth/no-auth-event') {
+          setRedirectHandled(true)
+          return
         }
-      }
-    }
-
-    handleVerification()
-
-    return () => {
-      cancelled = true
-    }
-  }, [canSubmitLogin, currentStep, normalizedEmail, password, verificationAttempt, navigate])
+        console.error('Google redirect error', error)
+        setGoogleError(mapGoogleSignInError(error))
+        setRedirectHandled(true)
+      })
+  }, [redirectHandled])
 
   useEffect(() => {
-    if (showLoginErrors && canSubmitLogin) {
-      setShowLoginErrors(false)
+    if (!loading && !user && !googleTriggered) {
+      void startGoogleSignIn()
     }
-  }, [showLoginErrors, canSubmitLogin])
+  }, [loading, user, googleTriggered, startGoogleSignIn])
 
   useEffect(() => {
-    setResetStatus('idle')
-    setResetError(null)
-  }, [normalizedEmail])
-
-  useEffect(() => {
-    if (currentStep !== 'profile') {
-      setProfileSaved(false)
-      setProfilePrefilled(false)
+    if (
+      !user ||
+      loading ||
+      profileLoading ||
+      authorizedLoading ||
+      !isApproved ||
+      !profileComplete
+    ) {
       return
     }
 
-    if (profilePrefilled) {
-      return
-    }
-
-    if (profile) {
-      setAlias((prev) => (prev ? prev : profile.alias ?? authorizedEntry?.displayName ?? normalizedEmail.split('@')[0]))
-      setFullName(profile.fullName ?? '')
-      setLanguage((profile.language as LanguageOption | undefined) ?? 'es')
-      setConsent(Boolean(profile.consentAt))
-      setProfilePrefilled(true)
-      return
-    }
-
-    if (authorizedEntry?.displayName) {
-      setAlias((prev) => prev || authorizedEntry.displayName || '')
-    } else if (normalizedEmail) {
-      setAlias((prev) => prev || normalizedEmail.split('@')[0])
-    }
-
-    setProfilePrefilled(true)
-  }, [authorizedEntry, currentStep, normalizedEmail, profile, profilePrefilled])
+    navigate(redirectTo, { replace: true })
+  }, [
+    authorizedLoading,
+    isApproved,
+    loading,
+    navigate,
+    profileComplete,
+    profileLoading,
+    redirectTo,
+    user,
+  ])
 
   useEffect(() => {
-    setProfileSaved(false)
-  }, [alias, fullName, language, consent])
-
-  async function handlePasswordReset() {
-    if (!isEmailValid) {
-      setShowLoginErrors(true)
-      setResetStatus('error')
-      setResetError('Introduce un correo válido antes de solicitar el reinicio de contraseña.')
+    if (!user) {
+      setPrefilled(false)
+      setAlias('')
+      setFullName('')
+      setConsent(false)
       return
     }
 
-    try {
-      setResetStatus('sending')
-      setResetError(null)
-      await sendPasswordResetEmail(auth, normalizedEmail)
-      setResetStatus('sent')
-    } catch (error) {
-      const mapped = mapAuthError(error)
-      setResetStatus('error')
-      if (mapped.code === 'auth/user-not-found') {
-        setResetError('Aún no existe una cuenta con este correo. Completa el registro creando tu contraseña.')
-      } else {
-        setResetError(mapped.message)
-      }
+    if (profileLoading || profileComplete || prefilled) {
+      return
     }
-  }
 
-  const handleStart = () => {
-    setCurrentStep('login')
-  }
+    const suggestedAlias =
+      profile?.alias ??
+      authorized?.displayName ??
+      user.displayName ??
+      user.email?.split('@')[0] ??
+      ''
 
-  const handleLoginSubmit = (event: FormEvent<HTMLFormElement>) => {
+    setAlias((current) => current || suggestedAlias)
+    setFullName(profile?.fullName ?? user.displayName ?? '')
+    setLanguage((profile?.language as LanguageOption | undefined) ?? 'es')
+    setConsent(Boolean(profile?.consentAt))
+    setPrefilled(true)
+  }, [
+    authorized?.displayName,
+    prefilled,
+    profile?.alias,
+    profile?.consentAt,
+    profile?.fullName,
+    profile?.language,
+    profileComplete,
+    profileLoading,
+    user,
+  ])
+
+  const handleSaveProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-
-    if (!canSubmitLogin) {
-      setShowLoginErrors(true)
+    if (!user || saving) {
       return
     }
 
-    setCurrentStep('verification')
-    setVerificationAttempt((attempt) => attempt + 1)
-  }
-
-  const handleRetryVerification = () => {
-    setVerificationAttempt((attempt) => attempt + 1)
-    setVerificationStatus('idle')
-  }
-
-  const handleBackToLogin = () => {
-    setVerificationStatus('idle')
-    setVerificationError(null)
-    signOut(auth).catch(() => undefined)
-    setCurrentStep('login')
-  }
-
-  const handleProfileSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-
-    if (!canFinishProfile || !auth.currentUser) {
+    if (!alias.trim()) {
+      setSaveError('Indica un alias para que podamos mostrarte en las listas.')
       return
     }
 
-    setSavingProfile(true)
+    if (!consent) {
+      setSaveError('Debes aceptar el tratamiento de datos para continuar.')
+      return
+    }
+
+    setSaving(true)
     setSaveError(null)
 
     try {
-      const profileRef = doc(db, 'users', auth.currentUser.uid)
+      const profileRef = doc(db, 'users', user.uid)
+      const preferences = {
+        notifications: profile?.preferences?.notifications ?? false,
+        darkMode: profile?.preferences?.darkMode ?? false,
+        availableToPlay: profile?.preferences?.availableToPlay ?? false,
+      }
+
       await setDoc(
         profileRef,
         {
@@ -317,318 +182,236 @@ export function Access() {
           fullName: fullName.trim() || null,
           language,
           bio: profile?.bio ?? null,
-          consentAt: consent ? serverTimestamp() : null,
-          role: authorizedEntry?.role ?? profile?.role ?? null,
+          consentAt: profile?.consentAt ?? serverTimestamp(),
+          preferences,
           updatedAt: serverTimestamp(),
         },
         { merge: true },
       )
-
-      setProfileSaved(true)
-      navigate('/')
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : 'No se pudo guardar el perfil. Vuelve a intentarlo más tarde.')
+      console.error('Failed to save onboarding profile', error)
+      setSaveError('No se pudo guardar tu perfil. IntÃ©ntalo de nuevo en unos segundos.')
     } finally {
-      setSavingProfile(false)
+      setSaving(false)
     }
   }
 
-  let mainContent: JSX.Element
-  switch (currentStep) {
-    case 'welcome':
-      mainContent = (
-        <div className="space-y-5">
-          <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-4 text-sm text-text-secondary">
-            <p className="text-base font-semibold text-text-primary">Evento privado Congreso Juegos de Mesa</p>
-            <p>
-              Mantén tus credenciales a mano: solo el personal invitado puede completar el acceso. El proceso dura menos de dos
-              minutos.
-            </p>
-          </div>
-          <div className="grid gap-3 text-sm text-text-secondary md:grid-cols-2">
-            <div className="rounded-2xl bg-background px-4 py-3">
-              <p className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-text-primary">
-                <Sparkles className="h-4 w-4 text-secondary" />
-                Qué podrás hacer
-              </p>
-              <ul className="space-y-2">
-                <li>• Registrar partidas y compartir enlace con tu mesa.</li>
-                <li>• Añadir tus juegos a la ludoteca común.</li>
-                <li>• Apuntarte a mesas abiertas desde el tablón.</li>
-              </ul>
-            </div>
-            <div className="rounded-2xl bg-background px-4 py-3">
-              <p className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-text-primary">
-                <ShieldCheck className="h-4 w-4 text-primary" />
-                Antes de empezar
-              </p>
-              <ul className="space-y-2">
-                <li>• Correo autorizado por la organización.</li>
-                <li>• Contraseña mínima de 8 caracteres.</li>
-                <li>• Alias público para mostrar en las partidas.</li>
-              </ul>
-            </div>
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <button
-              onClick={handleStart}
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
-            >
-              Comenzar acceso
-              <ArrowRight className="h-4 w-4" />
-            </button>
-            <a href={`mailto:${SUPPORT_EMAIL}`} className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline">
-              <MailCheck className="h-4 w-4" />
-              ¿Necesitas ayuda? Escríbenos
-            </a>
-          </div>
-        </div>
-      )
-      break
-    case 'login':
-      mainContent = (
-        <form onSubmit={handleLoginSubmit} className="space-y-6">
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-text-primary">Correo autorizado</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              className={clsx(
-                'w-full rounded-2xl border bg-background px-4 py-3 text-sm outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20',
-                showLoginErrors && !isEmailValid ? 'border-error text-error' : 'border-slate-200 text-text-primary',
-              )}
-              placeholder="tucorreo@organizacion.com"
-              autoComplete="email"
-              required
-            />
-            {showLoginErrors && !isEmailValid && <p className="text-sm text-error">Introduce un correo válido.</p>}
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-text-primary">Contraseña</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className={clsx(
-                'w-full rounded-2xl border bg-background px-4 py-3 text-sm outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20',
-                showLoginErrors && !isPasswordValid ? 'border-error text-error' : 'border-slate-200 text-text-primary',
-              )}
-              placeholder="Mínimo 8 caracteres"
-              autoComplete="current-password"
-              required
-            />
-            {showLoginErrors && !isPasswordValid && (
-              <p className="text-sm text-error">La contraseña debe tener al menos 8 caracteres.</p>
-            )}
-          </div>
-          <div className="space-y-1 text-xs text-text-secondary">
-            <button
-              type="button"
-              onClick={handlePasswordReset}
-              className="text-xs font-semibold text-primary hover:underline"
-              disabled={resetStatus === 'sending'}
-            >
-              {resetStatus === 'sending' ? 'Enviando enlace de recuperación…' : '¿Olvidaste tu contraseña?'}
-            </button>
-            {resetStatus === 'sent' && (
-              <p className="text-text-secondary">Te enviamos un correo con instrucciones para restablecerla.</p>
-            )}
-            {resetStatus === 'error' && resetError && <p className="text-error">{resetError}</p>}
-          </div>
-          <button
-            type="submit"
-            className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
-          >
-            Continuar
-            <ArrowRight className="h-4 w-4" />
-          </button>
-          <p className="text-xs text-text-secondary">
-            Si todavía no tienes credenciales, solicita el alta a la organización del congreso.
-          </p>
-        </form>
-      )
-      break
-    case 'verification':
-      mainContent = (
-        <div className="space-y-6">
-          <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-4 text-sm text-text-secondary">
-            <p className="flex items-center gap-2 text-base font-semibold text-text-primary">
-              {verificationStatus === 'success' ? (
-                <CheckCircle2 className="h-5 w-5 text-secondary" />
-              ) : verificationStatus === 'error' ? (
-                <ShieldAlert className="h-5 w-5 text-error" />
-              ) : (
-                <Loader2 className="h-5 w-5 animate-spin text-primary" />
-              )}
-              Verificando acceso para <span className="font-mono text-primary">{normalizedEmail}</span>
-            </p>
-            <p>
-              {verificationStatus === 'checking' && 'Consultando la whitelist y tus credenciales en Firebase Auth...'}
-              {verificationStatus === 'success' && 'Tu correo está autorizado. Vamos a completar tu perfil inicial.'}
-              {verificationStatus === 'error' && verificationError}
-            </p>
-          </div>
-          {verificationStatus === 'error' && (
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <button
-                onClick={handleRetryVerification}
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
-              >
-                Reintentar
-              </button>
-              <button
-                onClick={handleBackToLogin}
-                className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 px-5 py-3 text-sm font-semibold text-text-primary transition-colors hover:bg-background"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Cambiar datos
-              </button>
-            </div>
-          )}
-        </div>
-      )
-      break
-    case 'profile':
-      mainContent = (
-        <form onSubmit={handleProfileSubmit} className="space-y-6">
-          <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-text-secondary">
-            <p className="text-base font-semibold text-text-primary">Datos autorizados</p>
-            <p>
-              <span className="font-medium text-text-primary">Correo:</span> {normalizedEmail || user?.email || 'Pendiente'}
-            </p>
-            {authorizedEntry?.role && (
-              <p>
-                <span className="font-medium text-text-primary">Rol asignado:</span> {authorizedEntry.role}
-              </p>
-            )}
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
-              <span className="text-xs uppercase tracking-wide">Alias visible *</span>
-              <input
-                className="mt-1 w-full bg-transparent text-base text-text-primary outline-none"
-                value={alias}
-                onChange={(event) => setAlias(event.target.value)}
-                minLength={2}
-                required
-              />
-            </label>
-            <label className="rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
-              <span className="text-xs uppercase tracking-wide">Nombre completo (opcional)</span>
-              <input
-                className="mt-1 w-full bg-transparent text-base text-text-primary outline-none"
-                value={fullName}
-                onChange={(event) => setFullName(event.target.value)}
-                placeholder="Nombre y apellidos"
-              />
-            </label>
-            <label className="rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
-              <span className="text-xs uppercase tracking-wide">Idioma preferido</span>
-              <div className="mt-1 flex items-center gap-2">
-                <select
-                  className="w-full rounded-xl bg-background px-3 py-2 text-base text-text-primary outline-none"
-                  value={language}
-                  onChange={(event) => setLanguage(event.target.value as LanguageOption)}
-                >
-                  <option value="es">Español</option>
-                  <option value="en">English</option>
-                </select>
-              </div>
-            </label>
-            <label className="rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
-              <span className="text-xs uppercase tracking-wide">Consentimiento *</span>
-              <div className="mt-2 flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  checked={consent}
-                  onChange={(event) => setConsent(event.target.checked)}
-                  className="h-5 w-5 rounded-md border border-slate-200 text-primary focus:ring-primary"
-                  required
-                />
-                <span>Acepto participar en el evento y que se registren mis partidas durante el congreso.</span>
-              </div>
-            </label>
-          </div>
-          {saveError && (
-            <p className="rounded-xl border border-error/30 bg-error/5 px-3 py-2 text-sm text-error">{saveError}</p>
-          )}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <button
-              type="submit"
-              disabled={!canFinishProfile}
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white shadow-card transition-colors disabled:cursor-not-allowed disabled:bg-primary/60"
-            >
-              {savingProfile ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Guardando...
-                </>
-              ) : (
-                <>
-                  Finalizar acceso
-                  <CheckCircle2 className="h-4 w-4" />
-                </>
-              )}
-            </button>
-            {profileSaved && (
-              <Link
-                to="/"
-                className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-5 py-3 text-sm font-semibold text-text-primary transition-colors hover:bg-background"
-              >
-                <UserRound className="h-4 w-4" />
-                Entrar a la app
-              </Link>
-            )}
-          </div>
-        </form>
-      )
-      break
-    default:
-      mainContent = <div />
+  const handleSwitchAccount = async () => {
+    setGoogleError(null)
+    setPrefilled(false)
+    setAlias('')
+    setFullName('')
+    setConsent(false)
+    try {
+      await firebaseSignOut(auth)
+    } catch (error) {
+      console.error('Error while signing out', error)
+    } finally {
+      setGoogleTriggered(false)
+      void startGoogleSignIn(true)
+    }
   }
+
+  const showProfileForm =
+    Boolean(user) &&
+    !profileLoading &&
+    !authorizedLoading &&
+    isApproved &&
+    !profileComplete
+
+  const showPending = Boolean(user) && !authorizedLoading && isPending
+
+  const showLoadingState =
+    loading || profileLoading || authorizedLoading || (user && !isApproved && !isPending && !isUnauthorized)
 
   return (
     <div className="min-h-screen bg-background text-text-primary">
-      <div className="mx-auto flex min-h-screen max-w-screen-md flex-col px-4 pb-16 pt-10 sm:px-8">
-        <header className="mb-10 space-y-4">
-          <div className="flex items-center justify-between">
-            <Link to="/" className="inline-flex items-center gap-2 text-sm font-semibold text-text-secondary hover:text-primary">
-              <ArrowLeft className="h-4 w-4" />
-              Volver
-            </Link>
-            <span className="rounded-full bg-primary/10 px-4 py-1 text-xs font-semibold text-primary">Acceso privado</span>
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold text-text-primary">Acceso al evento</h1>
-            <p className="text-sm text-text-secondary">
-              Completa los pasos para verificar tu invitación y activar tu cuenta en la plataforma del congreso.
-            </p>
-          </div>
-          <div className="rounded-full bg-background shadow-card">
-            <div className="relative h-2 overflow-hidden rounded-full bg-slate-200">
-              <div
-                className="absolute inset-y-0 left-0 w-[var(--progress-width)] bg-primary transition-all"
-                style={{ '--progress-width': `${progress}%` } as React.CSSProperties}
-              />
-            </div>
-            <div className="mt-3 flex items-center justify-between text-xs font-semibold text-text-secondary">
-              {onboardingSteps.map((step, index) => (
-                <div key={step.key} className="flex flex-col items-center">
-                  <span className={clsx('mb-1 h-2 w-2 rounded-full', index <= activeIndex ? 'bg-primary' : 'bg-slate-300')} />
-                  <span>{step.title}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+      <div className="mx-auto flex min-h-screen max-w-screen-sm flex-col px-4 py-10 sm:px-8">
+        <header className="mb-8 flex items-center justify-between">
+          <Link to="/" className="inline-flex items-center gap-2 text-sm font-semibold text-text-secondary hover:text-primary">
+            <ArrowLeft className="h-4 w-4" />
+            Volver
+          </Link>
+          {user ? (
+            <button
+              onClick={handleSwitchAccount}
+              className="inline-flex items-center gap-2 rounded-full border border-primary/40 px-4 py-2 text-xs font-semibold text-primary transition-colors hover:bg-primary/10"
+            >
+              <LogOut className="h-4 w-4" />
+              Cambiar de cuenta
+            </button>
+          ) : null}
         </header>
+
         <main className="flex-1">
           <div className="card space-y-6 p-6">
-            <div>
-              <p className="text-xs uppercase tracking-wide text-text-secondary">Paso actual</p>
-              <h2 className="mt-1 text-xl font-semibold text-text-primary">{activeStep.title}</h2>
-              <p className="text-sm text-text-secondary">{activeStep.description}</p>
+            <div className="space-y-2">
+              <h1 className="text-xl font-semibold text-text-primary">Acceso al evento</h1>
+              <p className="text-sm text-text-secondary">
+                Usamos tu cuenta de Google para validar la invitaciÃ³n y entrar directamente sin contraseÃ±as adicionales.
+              </p>
             </div>
-            {mainContent}
+
+            {googleError ? (
+              <div className="rounded-2xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
+                {googleError}
+              </div>
+            ) : null}
+
+            {!user ? (
+              <div className="flex flex-col items-center gap-4 text-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <div>
+                  <p className="font-semibold text-text-primary">Conectando con tu cuenta de Googleâ€¦</p>
+                  <p className="text-sm text-text-secondary">
+                    AsegÃºrate de tener una sesiÃ³n activa en tu dispositivo. Si no aparece la selecciÃ³n de cuenta, toca el botÃ³n para reintentar.
+                  </p>
+                </div>
+                <button
+                  onClick={() => void startGoogleSignIn(true)}
+                  className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
+                >
+                  Reintentar con Google
+                </button>
+              </div>
+            ) : null}
+
+            {isUnauthorized ? (
+              <div className="space-y-3 rounded-2xl border border-error/30 bg-error/10 p-5 text-sm text-error">
+                <div className="flex items-center gap-2 text-base font-semibold text-error">
+                  <ShieldAlert className="h-5 w-5" />
+                  Acceso no autorizado
+                </div>
+                <p>
+                  El correo {user?.email ?? 'desconocido'} no estÃ¡ en la lista de invitaciones del evento. Si crees que es un error,
+                  contacta con la organizaciÃ³n para habilitar tu acceso.
+                </p>
+                <button
+                  onClick={handleSwitchAccount}
+                  className="inline-flex items-center gap-2 rounded-full border border-error/40 px-4 py-2 text-xs font-semibold text-error transition-colors hover:bg-error/10"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Probar con otra cuenta
+                </button>
+              </div>
+            ) : null}
+
+            {showPending ? (
+              <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+                <div className="flex items-center gap-2 text-base font-semibold text-amber-900">
+                  <ShieldCheck className="h-5 w-5" />
+                  InvitaciÃ³n en revisiÃ³n
+                </div>
+                <p>
+                  Hemos encontrado tu correo ({user?.email ?? 'desconocido'}) pero todavÃ­a estÃ¡ pendiente de aprobaciÃ³n. RecibirÃ¡s
+                  un aviso cuando la organizaciÃ³n confirme tu acceso.
+                </p>
+                <p className="text-xs text-amber-800">
+                  Si necesitas entrar con urgencia, avisa al equipo de organizaciÃ³n para que validen tu invitaciÃ³n.
+                </p>
+              </div>
+            ) : null}
+
+            {showProfileForm ? (
+              <form onSubmit={handleSaveProfile} className="space-y-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-text-primary">Ãšltimo paso: configura tu perfil</h2>
+                  <p className="text-sm text-text-secondary">
+                    Usaremos estos datos para mostrarte en las mesas, rankings y listados del congreso. Puedes cambiarlos mÃ¡s adelante.
+                  </p>
+                </div>
+
+                <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
+                  <span className="text-xs uppercase tracking-wide">Alias visible</span>
+                  <input
+                    value={alias}
+                    onChange={(event) => setAlias(event.currentTarget.value)}
+                    className="w-full bg-transparent text-base text-text-primary outline-none"
+                    placeholder="CÃ³mo quieres que te vean en la app"
+                    required
+                    minLength={2}
+                  />
+                </label>
+
+                <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
+                  <span className="text-xs uppercase tracking-wide">Nombre completo (opcional)</span>
+                  <input
+                    value={fullName}
+                    onChange={(event) => setFullName(event.currentTarget.value)}
+                    className="w-full bg-transparent text-base text-text-primary outline-none"
+                    placeholder="Nombre y apellidos"
+                  />
+                </label>
+
+                <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
+                  <span className="text-xs uppercase tracking-wide">Idioma preferido</span>
+                  <select
+                    value={language}
+                    onChange={(event) => setLanguage(event.currentTarget.value as LanguageOption)}
+                    className="w-full bg-transparent text-base text-text-primary outline-none"
+                  >
+                    <option value="es">EspaÃ±ol</option>
+                    <option value="en">InglÃ©s</option>
+                  </select>
+                </label>
+
+                <label className="flex items-start gap-3 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
+                  <input
+                    type="checkbox"
+                    checked={consent}
+                    onChange={(event) => setConsent(event.currentTarget.checked)}
+                    className="mt-1"
+                    required
+                  />
+                  <span>
+                    Acepto el tratamiento de mis datos personales para gestionar mi participaciÃ³n en el congreso, segÃºn la polÃ­tica de privacidad del evento.
+                  </span>
+                </label>
+
+                {saveError ? <p className="rounded-xl bg-error/10 px-3 py-2 text-sm text-error">{saveError}</p> : null}
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/60"
+                  >
+                    {saving ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Guardando perfil...
+                      </>
+                    ) : (
+                      <>
+                        Finalizar y entrar
+                        <UserRound className="h-4 w-4" />
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSwitchAccount}
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-text-secondary transition-colors hover:bg-background"
+                  >
+                    Usar otra cuenta
+                  </button>
+                </div>
+              </form>
+            ) : null}
+
+            {user && isApproved && profileComplete ? (
+              <div className="flex flex-col items-center gap-3 text-center text-text-secondary">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <p>Preparando tu experiencia...</p>
+              </div>
+            ) : null}
+
+            {showLoadingState && !showProfileForm && !isUnauthorized && !showPending && user ? (
+              <div className="flex flex-col items-center gap-3 text-center text-text-secondary">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <p>Validando tu invitaciÃ³n...</p>
+              </div>
+            ) : null}
           </div>
         </main>
       </div>
@@ -636,42 +419,33 @@ export function Access() {
   )
 }
 
-function mapAuthorizedEntry(email: string, data: DocumentData | undefined): AuthorizedEntry {
-  return {
-    email,
-    role: data?.role ?? undefined,
-    displayName: data?.displayName ?? undefined,
-    status: typeof data?.status === 'string' ? (data.status as WhitelistStatus) : undefined,
-  }
-}
-
-type AuthError = {
+type AuthErrorLike = {
   code: string
   message: string
 }
 
-function mapAuthError(error: unknown): AuthError {
-  if (typeof error === 'object' && error && 'code' in error && 'message' in error) {
+function isFirebaseAuthError(error: unknown): error is AuthErrorLike {
+  return Boolean(error && typeof error === 'object' && 'code' in error && 'message' in error)
+}
+
+function mapGoogleSignInError(error: unknown): string {
+  if (isFirebaseAuthError(error)) {
     const firebaseError = error as FirebaseAuthError
     switch (firebaseError.code) {
-      case 'auth/invalid-email':
-        return { code: firebaseError.code, message: 'El formato de correo no es válido.' }
-      case 'auth/invalid-credential':
-      case 'auth/wrong-password':
-        return { code: firebaseError.code, message: 'La contraseña no es correcta para este usuario.' }
-      case 'auth/too-many-requests':
-        return {
-          code: firebaseError.code,
-          message: 'Hemos bloqueado temporalmente tu acceso por múltiples intentos fallidos. Prueba nuevamente en unos minutos.',
-        }
-      case 'auth/user-disabled':
-        return { code: firebaseError.code, message: 'Esta cuenta ha sido deshabilitada. Contacta con la organización.' }
-      case 'auth/user-not-found':
-        return { code: firebaseError.code, message: 'No encontramos una cuenta activa. Crearemos una nueva para ti.' }
+      case 'auth/popup-closed-by-user':
+      case 'auth/cancelled-popup-request':
+        return 'Parece que se cerrÃ³ la ventana de Google antes de completar el inicio de sesiÃ³n. IntÃ©ntalo de nuevo.'
+      case 'auth/network-request-failed':
+        return 'No se pudo conectar con Google. Comprueba tu conexiÃ³n y vuelve a intentarlo.'
+      case 'auth/unauthorized-domain':
+        return 'Este dominio no estÃ¡ autorizado para iniciar sesiÃ³n con Google. Contacta con la organizaciÃ³n.'
+      case 'auth/account-exists-with-different-credential':
+        return 'Ya existe una cuenta asociada a este correo con un proveedor diferente. Usa la cuenta original o contacta con soporte.'
       default:
-        return { code: firebaseError.code, message: firebaseError.message }
+        return firebaseError.message || 'No se pudo iniciar sesiÃ³n con Google.'
     }
   }
 
-  return { code: 'unknown', message: 'Ocurrió un error inesperado al validar tus credenciales.' }
+  return 'No se pudo iniciar sesiÃ³n con Google. IntÃ©ntalo de nuevo en unos instantes.'
 }
+

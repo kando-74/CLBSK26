@@ -5,15 +5,15 @@ import { useAuth } from './AuthProvider'
 
 export function RequireAuth({ children }: { children: JSX.Element }) {
   const location = useLocation()
-  const { user, loading, authorized, signOut } = useAuth()
+  const { user, loading, authorized, authorizedLoading, signOut } = useAuth()
 
   useEffect(() => {
-    if (!loading && user && (!authorized || authorized.status === 'revoked')) {
+    if (!loading && !authorizedLoading && user && (!authorized || authorized.status === 'revoked')) {
       signOut().catch(() => undefined)
     }
-  }, [authorized, loading, signOut, user])
+  }, [authorized, authorizedLoading, loading, signOut, user])
 
-  if (loading) {
+  if (loading || authorizedLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background text-text-secondary">
         Cargando sesión...
