@@ -475,7 +475,6 @@ export const BoardPage: React.FC = () => {
   const [pendingStartId, setPendingStartId] = useState<string | null>(null)
   const [pendingFinishId, setPendingFinishId] = useState<string | null>(null)
   const [pendingCancelId, setPendingCancelId] = useState<string | null>(null)
-  const [openChatTableId, setOpenChatTableId] = useState<string | null>(null)
   const [highlightedTableId, setHighlightedTableId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -1162,26 +1161,15 @@ export const BoardPage: React.FC = () => {
                       {pendingCancelId === table.id ? 'Cancelando...' : 'Cancelar mesa'}
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOpenChatTableId((current) => (current === table.id ? null : table.id))
-                    }}
-                    className="text-sm font-semibold text-primary"
-                  >
-                    {openChatTableId === table.id ? 'Cerrar chat' : 'Abrir chat'}
-                  </button>
                 </div>
 
-                {openChatTableId === table.id && (
-                  <TableChat
-                    tableId={table.id}
-                    currentUserName={userDisplayName}
-                    currentUserId={user?.uid ?? null}
-                    canUsePrivateChannel={table.joined}
-                    className="mt-3"
-                  />
-                )}
+                <TableChat
+                  tableId={table.id}
+                  currentUserName={userDisplayName}
+                  currentUserId={user?.uid ?? null}
+                  canUsePrivateChannel={table.joined}
+                  className="mt-3"
+                />
               </article>
             )
           })}

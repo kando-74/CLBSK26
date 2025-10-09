@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { clsx } from 'clsx'
 import {
   BarChart3,
@@ -12,11 +12,13 @@ import {
   Users,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../components/AuthProvider'
+import { getDisplayName } from '../utils/user'
 import { getCurrentCongressDay, getDayBoundaries, formatHour } from '../utils/date'
 import { GameTitle } from '../components/GameTitle'
 import { UserLink } from '../components/UserLink'
 import { subscribePlays, type PlayRecord } from '../services/plays'
-import { subscribeTables, type TableRecord } from '../services/tables'
+import { useTablesService, type TableActionStatus } from '../services/tables'
 import { isActivityLoggingEnabled, subscribeActivityLogs, type ActivityLogRecord } from '../services/activity'
 
 const quickActions = [
@@ -57,8 +59,20 @@ const activityDateFormatter = new Intl.DateTimeFormat('es-ES', {
 
 type LoadingState = {
   plays: boolean
-  tables: boolean
   announcements: boolean
+}
+
+type FeedbackTone = 'success' | 'warning' | 'error'
+
+type ActionFeedback = {
+  message: string
+  tone: FeedbackTone
+}
+
+const FEEDBACK_TONE_STYLES: Record<FeedbackTone, string> = {
+  success: 'border-success/30 bg-success/10 text-success focus-visible:outline-success',
+  warning: 'border-secondary/30 bg-secondary/10 text-secondary focus-visible:outline-secondary',
+  error: 'border-error/30 bg-error/10 text-error focus-visible:outline-error',
 }
 
 function formatMinutesLabel(totalMinutes: number): string {
@@ -128,17 +142,32 @@ function getPlayStartLabel(play: PlayRecord): string {
   return formatHour(new Date(parsed))
 }
 
+function mapStatusToTone(status: TableActionStatus): FeedbackTone {
+  switch (status) {
+    case 'success':
+      return 'success'
+    case 'error':
+      return 'error'
+    default:
+      return 'warning'
+  }
+}
+
 export function Home() {
+  const { user, profile, localAlias } = useAuth()
+  const userDisplayName = useMemo(() => getDisplayName(profile, user, localAlias), [localAlias, profile, user])
   const day = getCurrentCongressDay()
   const [plays, setPlays] = useState<PlayRecord[]>([])
-  const [tables, setTables] = useState<TableRecord[]>([])
+  const { tables, loading: tablesLoading, joinTable } = useTablesService()
   const [activityLogs, setActivityLogs] = useState<ActivityLogRecord[]>([])
   const [loading, setLoading] = useState<LoadingState>({
     plays: true,
-    tables: true,
     announcements: isActivityLoggingEnabled,
   })
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [pendingJoinId, setPendingJoinId] = useState<string | null>(null)
+  const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null)
+  const actionMessageRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const { start, end } = getDayBoundaries()
@@ -154,19 +183,6 @@ export function Home() {
           setStatusMessage(message)
         }
         setLoading((current) => ({ ...current, plays: false }))
-      },
-    )
-
-    const unsubscribeTables = subscribeTables(
-      (next) => {
-        setTables(next)
-        setLoading((current) => ({ ...current, tables: false }))
-      },
-      (message) => {
-        if (message) {
-          setStatusMessage(message)
-        }
-        setLoading((current) => ({ ...current, tables: false }))
       },
     )
 
@@ -191,10 +207,37 @@ export function Home() {
 
     return () => {
       unsubscribePlays()
-      unsubscribeTables()
       unsubscribeActivity()
     }
   }, [])
+
+  useEffect(() => {
+    if (!actionFeedback) {
+      return
+    }
+
+    const timeout = setTimeout(() => setActionFeedback(null), 4000)
+    return () => clearTimeout(timeout)
+  }, [actionFeedback])
+
+  useEffect(() => {
+    if (actionFeedback && actionMessageRef.current) {
+      actionMessageRef.current.focus()
+    }
+  }, [actionFeedback])
+
+  async function handleJoin(tableId: string) {
+    setPendingJoinId(tableId)
+    try {
+      const result = await joinTable(tableId, userDisplayName)
+      setActionFeedback({
+        message: result.message,
+        tone: mapStatusToTone(result.status),
+      })
+    } finally {
+      setPendingJoinId(null)
+    }
+  }
 
   const activePlays = useMemo(
     () => plays.filter((play) => play.status === 'in-progress'),
@@ -296,7 +339,7 @@ export function Home() {
     }))
   }, [activityLogs])
 
-  const isLoading = loading.plays || loading.tables
+  const isLoading = loading.plays || tablesLoading
 
   return (
     <div className="space-y-8 pb-10">
@@ -335,6 +378,19 @@ export function Home() {
           </div>
         </div>
       </section>
+
+      {actionFeedback && (
+        <div
+          ref={actionMessageRef}
+          tabIndex={-1}
+          role="status"
+          aria-live="assertive"
+          aria-atomic="true"
+          className={`rounded-2xl border px-4 py-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 ${FEEDBACK_TONE_STYLES[actionFeedback.tone]}`}
+        >
+          {actionFeedback.message}
+        </div>
+      )}
 
       {statusMessage ? (
         <div className="card border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
@@ -497,29 +553,44 @@ export function Home() {
 
           <div className="card space-y-3 p-5">
             <h3 className="text-lg font-semibold text-text-primary">Mesas abiertas</h3>
-            {loading.tables && openTables.length === 0 ? (
+            {tablesLoading && openTables.length === 0 ? (
               <p className="text-sm text-text-secondary">Sincronizando mesas…</p>
             ) : null}
             {openTables.length > 0 ? (
               <div className="space-y-3">
                 {openTables.map((table) => {
-                  const availableSeats = Math.max(table.seats.total - table.seats.taken, 0)
-                  const participants = (table.participants ?? []).map((participant) => participant.name)
+                  const joinDisabled =
+                    table.seats.taken >= table.seats.total ||
+                    table.joined ||
+                    pendingJoinId === table.id ||
+                    table.status !== 'open'
+
+                  const joinLabel = (() => {
+                    if (pendingJoinId === table.id) {
+                      return 'Reservando...'
+                    }
+                    if (table.joined) {
+                      return 'Apuntado'
+                    }
+                    if (table.seats.taken >= table.seats.total) {
+                      return 'Completa'
+                    }
+                    return 'Apuntarme'
+                  })()
 
                   return (
                     <article key={table.id} className="rounded-2xl bg-background/80 p-4">
                       <div className="flex items-center justify-between gap-3">
                         <GameTitle name={table.game} size="sm" textClassName="text-base" />
-                        <span
-                          className={clsx(
-                            'rounded-full px-3 py-1 text-xs font-semibold',
-                            availableSeats > 0
-                              ? 'bg-secondary/20 text-secondary'
-                              : 'bg-emerald-100 text-emerald-800',
-                          )}
+                        <button
+                          onClick={() => {
+                            void handleJoin(table.id)
+                          }}
+                          disabled={joinDisabled}
+                          className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/60"
                         >
-                          {availableSeats > 0 ? `${availableSeats} plaza(s) libre(s)` : 'Completa'}
-                        </span>
+                          {joinLabel}
+                        </button>
                       </div>
                       <p className="mt-2 text-sm text-text-secondary">
                         <span className="font-semibold text-text-primary">Anfitrión:</span>{' '}
@@ -532,22 +603,22 @@ export function Home() {
                       <p className="text-xs text-text-secondary">
                         {table.seats.taken}/{table.seats.total} personas anotadas
                       </p>
-                      {participants.length > 0 ? (
-                        <p className="mt-1 text-xs text-text-secondary">{renderPlayersInline(participants)}</p>
+                      {table.participants.length > 0 ? (
+                        <p className="mt-1 text-xs text-text-secondary">{renderPlayersInline(table.participants.map(p => p.name))}</p>
                       ) : null}
                     </article>
                   )
                 })}
               </div>
             ) : null}
-            {!loading.tables && openTables.length === 0 ? (
+            {!tablesLoading && openTables.length === 0 ? (
               <p className="text-sm text-text-secondary">No hay mesas abiertas ahora mismo. Vuelve en unos minutos.</p>
             ) : null}
           </div>
 
           <div className="card space-y-3 p-5">
             <h3 className="text-lg font-semibold text-text-primary">Mesas en juego</h3>
-            {loading.tables && tablesInProgress.length === 0 ? (
+            {tablesLoading && tablesInProgress.length === 0 ? (
               <p className="text-sm text-text-secondary">Recuperando estado de las mesas…</p>
             ) : null}
             {tablesInProgress.length > 0 ? (
@@ -575,7 +646,7 @@ export function Home() {
                 })}
               </div>
             ) : null}
-            {!loading.tables && tablesInProgress.length === 0 ? (
+            {!tablesLoading && tablesInProgress.length === 0 ? (
               <p className="text-sm text-text-secondary">No hay mesas activas en este momento.</p>
             ) : null}
           </div>
