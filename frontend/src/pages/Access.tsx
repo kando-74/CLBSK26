@@ -37,11 +37,22 @@ export function Access() {
   }, [location.state])
 
   const profileComplete = Boolean(profile?.alias && profile?.consentAt)
+  const profileRole = profile?.role ?? null
+  const hasWhitelistEntry = Boolean(authorized)
   const whitelistStatus = authorized?.status ?? null
-  const isApproved = whitelistStatus === 'approved'
-  const isPending = whitelistStatus === 'pending'
+  const isOrgRole =
+    profileRole === 'organizacion' ||
+    profileRole === 'staff' ||
+    profileRole === 'admin' ||
+    profileRole === 'organización'
+  const isApproved =
+    whitelistStatus === 'approved' ||
+    (hasWhitelistEntry && whitelistStatus !== 'revoked' && whitelistStatus !== 'pending') ||
+    isOrgRole
+  const isPending = whitelistStatus === 'pending' && !isOrgRole
   const isRevoked = whitelistStatus === 'revoked'
-  const isUnauthorized = Boolean(user) && !authorizedLoading && (!authorized || isRevoked)
+  const isUnauthorized =
+    Boolean(user) && !authorizedLoading && !profileLoading && ((!isApproved && !isPending) || isRevoked)
 
   const startGoogleSignIn = useCallback(
     async (forceSelect = false) => {
@@ -219,10 +230,13 @@ export function Access() {
     isApproved &&
     !profileComplete
 
-  const showPending = Boolean(user) && !authorizedLoading && isPending
+  const showPending = Boolean(user) && !authorizedLoading && !profileLoading && isPending
 
   const showLoadingState =
-    loading || profileLoading || authorizedLoading || (user && !isApproved && !isPending && !isUnauthorized)
+    loading ||
+    profileLoading ||
+    authorizedLoading ||
+    (user && !isApproved && !isPending && !isUnauthorized && !isRevoked)
 
   return (
     <div className="min-h-screen bg-background text-text-primary">
