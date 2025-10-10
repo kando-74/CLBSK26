@@ -14,6 +14,17 @@ import { useAuth } from '../components/AuthProvider'
 
 type LanguageOption = 'es' | 'en'
 
+const GOOGLE_ATTEMPT_KEY = 'clbsk_google_redirect_attempt'
+
+function readStoredAttempts() {
+  if (typeof window === 'undefined') {
+    return 0
+  }
+  const stored = window.sessionStorage.getItem(GOOGLE_ATTEMPT_KEY)
+  const parsed = stored ? Number.parseInt(stored, 10) : 0
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 export function Access() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -21,7 +32,24 @@ export function Access() {
 
   const [googleError, setGoogleError] = useState<string | null>(null)
   const [redirectHandled, setRedirectHandled] = useState(false)
-  const [googleTriggered, setGoogleTriggered] = useState(false)
+  const [attemptCount, setAttemptCount] = useState(() => readStoredAttempts())
+
+  const registerRedirectAttempt = useCallback(() => {
+    setAttemptCount((current) => {
+      const next = current + 1
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(GOOGLE_ATTEMPT_KEY, String(next))
+      }
+      return next
+    })
+  }, [])
+
+  const resetRedirectAttempts = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem(GOOGLE_ATTEMPT_KEY)
+    }
+    setAttemptCount(0)
+  }, [])
 
   const [alias, setAlias] = useState('')
   const [fullName, setFullName] = useState('')
@@ -47,7 +75,7 @@ export function Access() {
     profileRole === 'organización'
   const isApproved =
     whitelistStatus === 'approved' ||
-    (hasWhitelistEntry && whitelistStatus !== 'revoked' && whitelistStatus !== 'pending') ||
+
     isOrgRole
   const isPending = whitelistStatus === 'pending' && !isOrgRole
   const isRevoked = whitelistStatus === 'revoked'
@@ -58,18 +86,18 @@ export function Access() {
     async (forceSelect = false) => {
       try {
         setGoogleError(null)
-        setGoogleTriggered(true)
+        registerRedirectAttempt()
         const provider = new GoogleAuthProvider()
         if (forceSelect) {
           provider.setCustomParameters({ prompt: 'select_account' })
         }
-        await signInWithRedirect(auth, provider)
+        await signInWithPopup(auth, provider)
       } catch (error) {
         console.error('Google sign-in failed', error)
         setGoogleError(mapGoogleSignInError(error))
       }
     },
-    [],
+    [registerRedirectAttempt],
   )
 
   useEffect(() => {
@@ -93,10 +121,24 @@ export function Access() {
   }, [redirectHandled])
 
   useEffect(() => {
-    if (!loading && !user && !googleTriggered) {
+    if (!redirectHandled) {
+      return
+    }
+
+    if (googleError) {
+      return
+    }
+
+    if (!loading && !user && attemptCount === 0) {
       void startGoogleSignIn()
     }
-  }, [loading, user, googleTriggered, startGoogleSignIn])
+  }, [attemptCount, googleError, loading, redirectHandled, startGoogleSignIn, user])
+
+  useEffect(() => {
+    if (user) {
+      resetRedirectAttempts()
+    }
+  }, [resetRedirectAttempts, user])
 
   useEffect(() => {
     if (
@@ -213,12 +255,12 @@ export function Access() {
     setAlias('')
     setFullName('')
     setConsent(false)
+    resetRedirectAttempts()
     try {
       await firebaseSignOut(auth)
     } catch (error) {
       console.error('Error while signing out', error)
     } finally {
-      setGoogleTriggered(false)
       void startGoogleSignIn(true)
     }
   }
