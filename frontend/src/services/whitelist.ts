@@ -97,7 +97,7 @@ export function useWhitelistManagement() {
       (snapshotError) => {
         console.error('No se pudo leer la whitelist', snapshotError)
         setLoading(false)
-        setError('No se pudo cargar la whitelist. Revisa tu conexión.')
+        setError('No se pudo cargar la whitelist. Revisa tu conexiï¿½n.')
       },
     )
 
@@ -125,7 +125,7 @@ export function useWhitelistManagement() {
         updatedAt: data.entry.updatedAt ?? new Date().toISOString(),
       })
     } catch (callableError) {
-      console.error('Error al añadir un correo a la whitelist', callableError)
+      console.error('Error al aï¿½adir un correo a la whitelist', callableError)
       throw callableError
     }
   }, [])
