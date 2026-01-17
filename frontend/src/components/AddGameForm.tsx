@@ -87,7 +87,7 @@ export function AddGameForm({ eventId = 'main-event' }: { eventId?: string }) {
           weightValue: resolvedWeight ?? null,
         },
       })
-    } catch (error) {
+    } catch {
       // El hook `useMutation` ya gestiona el estado de error
     }
   }

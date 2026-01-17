@@ -22,7 +22,18 @@ type PreferencesState = {
   notifications: boolean
   darkMode: boolean
   availableToPlay: boolean
+  availabilityNote: string
+  interestTags: string[]
+  radarMode: 'manual' | 'auto'
 }
+
+const INTEREST_OPTIONS = [
+  { id: 'filler', label: 'Filler' },
+  { id: 'party', label: 'Party' },
+  { id: 'eurogame', label: 'Eurogame' },
+  { id: 'wargame', label: 'Wargame' },
+  { id: 'ligero', label: 'Juego ligero' },
+]
 
 export function Profile() {
   const { user, profile, profileLoading, authorized, localAlias, updateLocalAlias, signOut } = useAuth()
@@ -33,6 +44,9 @@ export function Profile() {
     notifications: false,
     darkMode: false,
     availableToPlay: false,
+    availabilityNote: '',
+    interestTags: [],
+    radarMode: 'manual',
   })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -55,6 +69,9 @@ export function Profile() {
         notifications: profile?.preferences?.notifications ?? false,
         darkMode: profile?.preferences?.darkMode ?? false,
         availableToPlay: profile?.preferences?.availableToPlay ?? false,
+        availabilityNote: profile?.preferences?.availabilityNote ?? '',
+        interestTags: profile?.preferences?.interestTags ?? [],
+        radarMode: (profile?.preferences?.radarMode as 'manual' | 'auto') ?? 'manual',
       })
     }
   }, [profile, profileLoading, user])
@@ -225,6 +242,20 @@ export function Profile() {
 
   const handlePreferenceChange = (key: keyof PreferencesState) => (event: React.ChangeEvent<HTMLInputElement>) => {
     setPreferences((current) => ({ ...current, [key]: event.target.checked }))
+  }
+
+  const handleInterestToggle = (tagId: string) => {
+    setPreferences((prev) => {
+      const current = prev.interestTags
+      const next = current.includes(tagId)
+        ? current.filter((t) => t !== tagId)
+        : [...current, tagId]
+      return { ...prev, interestTags: next }
+    })
+  }
+
+  const handleRadarModeChange = (mode: 'manual' | 'auto') => {
+    setPreferences((prev) => ({ ...prev, radarMode: mode }))
   }
 
   const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -521,6 +552,62 @@ export function Profile() {
                 className="h-5 w-10 cursor-pointer rounded-full accent-primary"
               />
             </label>
+
+            <div className="rounded-2xl bg-background px-4 py-3 space-y-3">
+              <p className="font-semibold text-text-primary">Modo del Radar</p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleRadarModeChange('manual')}
+                  className={`flex-1 py-2 px-3 rounded-xl border text-xs font-medium transition-colors ${preferences.radarMode === 'manual' ? 'bg-primary text-white border-primary' : 'bg-surface-elevation-1 text-text-secondary border-primary/10'}`}
+                >
+                  Manual
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRadarModeChange('auto')}
+                  className={`flex-1 py-2 px-3 rounded-xl border text-xs font-medium transition-colors ${preferences.radarMode === 'auto' ? 'bg-primary text-white border-primary' : 'bg-surface-elevation-1 text-text-secondary border-primary/10'}`}
+                >
+                  Siempre listo
+                </button>
+              </div>
+              <p className="text-[10px] text-text-secondary italic">
+                {preferences.radarMode === 'auto'
+                  ? 'Te pondremos en el radar automáticamente cuando no estés en una partida.'
+                  : 'Tú controlas cuándo aparecer en el radar manualmente.'}
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-background px-4 py-3 space-y-3">
+              <p className="font-semibold text-text-primary">Intereses / Categorías</p>
+              <div className="flex flex-wrap gap-2">
+                {INTEREST_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => handleInterestToggle(opt.id)}
+                    className={`py-1.5 px-3 rounded-full border text-xs font-medium transition-colors ${preferences.interestTags.includes(opt.id) ? 'bg-secondary text-white border-secondary' : 'bg-surface-elevation-1 text-text-secondary border-primary/10'}`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {preferences.availableToPlay && (
+              <label className="flex flex-col gap-2 rounded-2xl bg-background px-4 py-3">
+                <span className="font-semibold text-text-primary">Nota de disponibilidad</span>
+                <textarea
+                  value={preferences.availabilityNote}
+                  onChange={(e) => {
+                    const value = e.target.value
+                    setPreferences(prev => ({ ...prev, availabilityNote: value }))
+                  }}
+                  placeholder="Ej. Busco partida de Ark Nova o Terraforming Mars..."
+                  className="h-20 w-full resize-none bg-transparent text-sm text-text-secondary outline-none border-b border-primary/10 focus:border-primary"
+                />
+              </label>
+            )}
           </div>
           <div className="rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-text-secondary">
             <p className="font-semibold text-text-primary">Centro de soporte</p>

@@ -46,6 +46,7 @@ type StoredTable = {
   completedAt?: number | null
   resultSummary?: string | null
   chronicles?: TableChronicles
+  tags?: string[]
 }
 
 type FirestoreTable = {
@@ -70,6 +71,7 @@ type FirestoreTable = {
   completedAt?: number | null
   resultSummary?: string | null
   chronicles?: TableChronicles
+  tags?: string[]
 }
 
 type FirestoreActionResult = {
@@ -100,6 +102,7 @@ export type TableRecord = {
   completedAt: number | null
   resultSummary: string | null
   chronicles: TableChronicles
+  tags: string[]
 }
 
 export type CreateTableInput = {
@@ -110,6 +113,7 @@ export type CreateTableInput = {
   room: string
   description: string
   coverUrl?: string | null
+  tags?: string[]
 }
 
 export type StartTableInput = {
@@ -248,21 +252,21 @@ function normalizeLocalTable(entry: StoredTable | (StoredTable & { joined?: bool
   const takenSeats = clampSeats(entry.seats?.taken ?? 0, totalSeats)
   const participants = Array.isArray((entry as StoredTable).participants)
     ? (entry as StoredTable).participants!.map((participant) => ({
-        deviceId:
-          typeof participant.deviceId === 'string' || participant.deviceId === null
-            ? participant.deviceId
-            : null,
-        name: participant.name ?? entry.host,
-      }))
+      deviceId:
+        typeof participant.deviceId === 'string' || participant.deviceId === null
+          ? participant.deviceId
+          : null,
+      name: participant.name ?? entry.host,
+    }))
     : [{ deviceId: null, name: entry.host }]
   const currentPlayers = Array.isArray((entry as StoredTable).currentPlayers)
     ? (entry as StoredTable).currentPlayers!.map((participant) => ({
-        deviceId:
-          typeof participant.deviceId === 'string' || participant.deviceId === null
-            ? participant.deviceId
-            : null,
-        name: participant.name ?? entry.host,
-      }))
+      deviceId:
+        typeof participant.deviceId === 'string' || participant.deviceId === null
+          ? participant.deviceId
+          : null,
+      name: participant.name ?? entry.host,
+    }))
     : []
   const chronicles = (entry as StoredTable).chronicles ?? {}
   const status = (entry as StoredTable).status ?? 'open'
@@ -295,6 +299,7 @@ function normalizeLocalTable(entry: StoredTable | (StoredTable & { joined?: bool
         ? (entry as StoredTable).resultSummary ?? null
         : null,
     chronicles,
+    tags: (entry as StoredTable).tags ?? [],
   }
 }
 
@@ -350,6 +355,7 @@ function cloneLocalTable(table: StoredTable): StoredTable {
     participants: table.participants ? table.participants.map((participant) => ({ ...participant })) : [],
     currentPlayers: table.currentPlayers ? table.currentPlayers.map((participant) => ({ ...participant })) : [],
     chronicles: table.chronicles ? { ...table.chronicles } : {},
+    tags: table.tags ? [...table.tags] : [], // Ensure tags are cloned
   }
 }
 
@@ -373,8 +379,10 @@ function localTableToRecord(table: StoredTable): TableRecord {
     completedAt: typeof table.completedAt === 'number' ? table.completedAt : null,
     resultSummary: typeof table.resultSummary === 'string' ? table.resultSummary : null,
     chronicles: table.chronicles ? { ...table.chronicles } : {},
+    tags: table.tags ?? [],
   }
 }
+
 
 async function fetchTablesFromFirestore(deviceId: string): Promise<TableRecord[]> {
   if (!tablesCollectionRef) {
@@ -408,7 +416,7 @@ function subscribeTablesFromFirestore(
   onError: (message: string) => void,
 ): () => void {
   if (!tablesCollectionRef) {
-    return () => {}
+    return () => { }
   }
 
   const q = query(tablesCollectionRef, orderBy('createdAt', 'desc'))
@@ -460,7 +468,7 @@ export function subscribeTables(
 ): () => void {
   if (isRealtimeTablesEnabledInternal()) {
     const deviceId = getClientDeviceId()
-    return subscribeTablesFromFirestore(deviceId, onUpdate, onError ?? (() => {}))
+    return subscribeTablesFromFirestore(deviceId, onUpdate, onError ?? (() => { }))
   }
 
   const emitLocalTables = () => {
@@ -474,7 +482,7 @@ export function subscribeTables(
   emitLocalTables()
 
   if (typeof window === 'undefined') {
-    return () => {}
+    return () => { }
   }
 
   const interval = window.setInterval(emitLocalTables, 5000)
@@ -533,6 +541,7 @@ async function createTableInFirestore(input: CreateTableInput, deviceId: string)
     completedAt: null,
     resultSummary: null,
     chronicles: {},
+    tags: input.tags ?? [],
   }
 
   try {
@@ -597,12 +606,12 @@ async function joinTableInFirestore(
       const takenSeats = clampSeats(rawData.seats?.taken ?? 0, totalSeats)
       const participants = Array.isArray(rawData.participants)
         ? rawData.participants.map((participant) => ({
-            deviceId:
-              typeof participant.deviceId === 'string' || participant.deviceId === null
-                ? participant.deviceId
-                : null,
-            name: participant.name ?? rawData.host,
-          }))
+          deviceId:
+            typeof participant.deviceId === 'string' || participant.deviceId === null
+              ? participant.deviceId
+              : null,
+          name: participant.name ?? rawData.host,
+        }))
         : [{ deviceId: null, name: rawData.host }]
 
       const normalizedData: FirestoreTable = {
@@ -1084,25 +1093,25 @@ function mapFirestoreTable(id: string, data: FirestoreTable, joined: boolean): T
   const createdAt = typeof data.createdAt === 'number' ? data.createdAt : Date.now()
   const participants = Array.isArray(data.participants)
     ? data.participants
-        .filter((participant) => participant && typeof participant.name === 'string')
-        .map((participant) => ({
-          deviceId:
-            typeof participant.deviceId === 'string' || participant.deviceId === null
-              ? participant.deviceId
-              : null,
-          name: participant.name ?? data.host,
-        }))
+      .filter((participant) => participant && typeof participant.name === 'string')
+      .map((participant) => ({
+        deviceId:
+          typeof participant.deviceId === 'string' || participant.deviceId === null
+            ? participant.deviceId
+            : null,
+        name: participant.name ?? data.host,
+      }))
     : [{ deviceId: null, name: data.host }]
   const currentPlayers = Array.isArray(data.currentPlayers)
     ? data.currentPlayers
-        .filter((participant) => participant && typeof participant.name === 'string')
-        .map((participant) => ({
-          deviceId:
-            typeof participant.deviceId === 'string' || participant.deviceId === null
-              ? participant.deviceId
-              : null,
-          name: participant.name ?? data.host,
-        }))
+      .filter((participant) => participant && typeof participant.name === 'string')
+      .map((participant) => ({
+        deviceId:
+          typeof participant.deviceId === 'string' || participant.deviceId === null
+            ? participant.deviceId
+            : null,
+        name: participant.name ?? data.host,
+      }))
     : []
   const chronicles = data.chronicles ?? {}
   const status: TableStatus = data.status ?? 'open'
@@ -1129,6 +1138,7 @@ function mapFirestoreTable(id: string, data: FirestoreTable, joined: boolean): T
     completedAt: typeof data.completedAt === 'number' ? data.completedAt : null,
     resultSummary: typeof data.resultSummary === 'string' ? data.resultSummary : null,
     chronicles,
+    tags: data.tags ?? [],
   }
 }
 
@@ -1743,6 +1753,6 @@ export function useTablesService(): UseTablesService {
       cancelTable: handleCancel,
       completeTable: handleComplete,
     }),
-      [handleCancel, handleComplete, handleCreate, handleJoin, handleStart, loadTables, state],
+    [handleCancel, handleComplete, handleCreate, handleJoin, handleStart, loadTables, state],
   )
 }

@@ -6,3 +6,5 @@ afterEach(() => {
   cleanup()
   vi.clearAllMocks()
 })
+
+window.HTMLElement.prototype.scrollIntoView = vi.fn()

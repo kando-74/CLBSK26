@@ -11,6 +11,7 @@ import {
   type TableRecord,
 } from '../services/tables'
 import { getDayBoundaries } from '../utils/date'
+import { useAuth } from './AuthProvider'
 
 type LiveEventKind =
   | 'table:new'
@@ -40,12 +41,12 @@ type HighlightMap = Record<string, number>
 
 type LiveEventsContextValue = {
   events: LiveEvent[]
-  dismissEvent: (id: string) => void
-  getTableHighlight: (tableId: string) => HighlightInfo | null
-  getPlayHighlight: (playId: string) => HighlightInfo | null
+  dismissEvent: (_id: string) => void
+  getTableHighlight: (_tableId: string) => HighlightInfo | null
+  getPlayHighlight: (_playId: string) => HighlightInfo | null
   latestTableTimestamp: number | null
   latestPlayTimestamp: number | null
-  formatRelativeTime: (timestamp: number) => string
+  formatRelativeTime: (_timestamp: number) => string
 }
 
 const LiveEventsContext = createContext<LiveEventsContextValue | undefined>(undefined)
@@ -86,6 +87,7 @@ export function LiveEventsProvider({ children }: { children: ReactNode }) {
   const [playHighlights, setPlayHighlights] = useState<HighlightMap>({})
   const [latestTableTimestamp, setLatestTableTimestamp] = useState<number | null>(null)
   const [latestPlayTimestamp, setLatestPlayTimestamp] = useState<number | null>(null)
+  const { profile } = useAuth()
 
   const tablesReadyRef = useRef(false)
   const playsReadyRef = useRef(false)
@@ -165,6 +167,20 @@ export function LiveEventsProvider({ children }: { children: ReactNode }) {
             description: `${table.game} · Sala ${table.room}`,
           })
           highlightTable(table.id)
+
+          // Notificación de Matchmaking por intereses
+          if (profile?.preferences?.interestTags && table.tags && table.tags.length > 0) {
+            const hasMatch = table.tags.some((tag) => profile.preferences?.interestTags?.includes(tag))
+            if (hasMatch) {
+              pushEvent({
+                kind: 'table:new',
+                scope: 'table',
+                entityId: table.id,
+                title: '✨ Interés coincidiente',
+                description: `¡Mesa de ${table.game}! Coincide con tus intereses.`,
+              })
+            }
+          }
           return
         }
 
@@ -193,7 +209,7 @@ export function LiveEventsProvider({ children }: { children: ReactNode }) {
 
       lastTablesRef.current = nextMap
     },
-    [highlightTable, pushEvent],
+    [highlightTable, pushEvent, profile?.preferences?.interestTags],
   )
 
   const handlePlaysUpdate = useCallback(
@@ -262,7 +278,7 @@ export function LiveEventsProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    const unsubscribe = subscribeTables(handleTablesUpdate, () => {})
+    const unsubscribe = subscribeTables(handleTablesUpdate, () => { })
     return () => {
       unsubscribe()
     }

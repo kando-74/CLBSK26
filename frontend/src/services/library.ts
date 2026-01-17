@@ -34,6 +34,12 @@ export type LibraryGameRecord = {
   weightValue: number | null;
   createdAt: number | null;
   updatedAt: number | null;
+  status: 'available' | 'borrowed';
+  borrowedBy: {
+    uid: string;
+    alias: string;
+  } | null;
+  borrowedAt: number | null;
 };
 
 export type LibraryGameInput = {
@@ -54,6 +60,12 @@ export type LibraryGameInput = {
   yearPublished?: number | null;
   durationMinutes?: number | null;
   weightValue?: number | null;
+  status?: 'available' | 'borrowed';
+  borrowedBy?: {
+    uid: string;
+    alias: string;
+  } | null;
+  borrowedAt?: number | null;
 };
 
 export type LibraryActionStatus = "success" | "already-exists" | "error";
@@ -82,6 +94,12 @@ type FirestoreGame = {
   weightValue?: number | null;
   createdAt?: { toDate?: () => Date } | number | null;
   updatedAt?: { toDate?: () => Date } | number | null;
+  status?: 'available' | 'borrowed';
+  borrowedBy?: {
+    uid: string;
+    alias: string;
+  } | null;
+  borrowedAt?: { toDate?: () => Date } | number | null;
 };
 
 const STORAGE_KEY = "clbsk_event_library_v1";
@@ -100,7 +118,7 @@ const seedGames: LibraryGameRecord[] = [
     duration: "90-120 min",
     weight: "3.9",
     language: "ES",
-    mechanics: ["Econom�a", "Redes", "Construcci�n"],
+    mechanics: ["Economa", "Redes", "Construccin"],
     coverUrl:
       "https://cf.geekdo-images.com/tnRbuD2sIh_2kcCF3cNq0g__original/img/jqfbtJwsV7cqV9rON32T6N4XK6g=/0x0/filters:format(png)/pic3490053.png",
     manual: false,
@@ -111,6 +129,9 @@ const seedGames: LibraryGameRecord[] = [
     weightValue: 3.9,
     createdAt: Date.now() - 1000 * 60 * 60 * 24,
     updatedAt: Date.now() - 1000 * 60 * 60 * 12,
+    status: 'available',
+    borrowedBy: null,
+    borrowedAt: null,
   },
   {
     id: "seed-heat",
@@ -133,18 +154,21 @@ const seedGames: LibraryGameRecord[] = [
     weightValue: 2.9,
     createdAt: Date.now() - 1000 * 60 * 80,
     updatedAt: Date.now() - 1000 * 60 * 40,
+    status: 'available',
+    borrowedBy: null,
+    borrowedAt: null,
   },
   {
     id: "seed-cascadia",
     title: "Cascadia",
-    owner: "Organizaci�n",
+    owner: "Organizacin",
     ownerId: null,
     ownerEmail: null,
     players: "1-4",
     duration: "30-45 min",
     weight: "1.9",
     language: "ES",
-    mechanics: ["Draft", "Colocaci�n de losetas"],
+    mechanics: ["Draft", "Colocacin de losetas"],
     coverUrl:
       "https://cf.geekdo-images.com/5n03as0sVX07J1i8LojRXQ__original/img/zqht-UTn6QQGfS0vzVJpUl_ERc4=/0x0/filters:format(png)/pic6306303.png",
     manual: true,
@@ -155,6 +179,9 @@ const seedGames: LibraryGameRecord[] = [
     weightValue: 1.9,
     createdAt: Date.now() - 1000 * 60 * 20,
     updatedAt: Date.now() - 1000 * 60 * 10,
+    status: 'available',
+    borrowedBy: null,
+    borrowedAt: null,
   },
 ];
 
@@ -200,7 +227,7 @@ function coerceNumber(value: unknown): number | null {
 }
 
 function extractNumbers(label: string): number[] {
-  return (label.match(/\d+(?:[\.,]\d+)?/g) ?? [])
+  return (label.match(/\d+(?:[.,]\d+)?/g) ?? [])
     .map((token) => Number(token.replace(',', '.')))
     .filter((token) => Number.isFinite(token));
 }
@@ -255,7 +282,7 @@ function normalizeGameInput(input: LibraryGameInput): Required<LibraryGameInput>
 
   return {
     id,
-    title: coerceString(input.title, "Juego sin t�tulo"),
+    title: coerceString(input.title, "Juego sin ttulo"),
     owner: coerceString(input.owner, "Participante"),
     ownerId: input.ownerId ?? null,
     ownerEmail: input.ownerEmail ?? null,
@@ -274,44 +301,85 @@ function normalizeGameInput(input: LibraryGameInput): Required<LibraryGameInput>
         : null,
     durationMinutes: coerceNumber(input.durationMinutes ?? null),
     weightValue: coerceNumber(input.weightValue ?? null),
+    status: input.status ?? 'available',
+    borrowedBy: input.borrowedBy ?? null,
+    borrowedAt: input.borrowedAt ?? null,
   };
 }
 
 function mapFirestoreGame(id: string, data: FirestoreGame): LibraryGameRecord {
-  const createdAt = data.createdAt;
-  const updatedAt = data.updatedAt;
+  try {
+    const createdAt = data.createdAt;
+    const updatedAt = data.updatedAt;
+    const borrowedAt = data.borrowedAt;
 
-  return withComputedMetrics({
-    id,
-    title: coerceString(data.title, "Juego sin t�tulo"),
-    owner: coerceString(data.owner, "Participante"),
-    ownerId: coerceString(data.ownerId ?? null, "") || null,
-    ownerEmail: coerceString(data.ownerEmail ?? null, "") || null,
-    players: coerceString(data.players, "N/D"),
-    duration: coerceString(data.duration, "N/D"),
-    weight: coerceString(data.weight, "N/D"),
-    language: coerceString(data.language, "N/D"),
-    mechanics: coerceStringArray(data.mechanics),
-    coverUrl: coerceString(data.coverUrl ?? null, "") || null,
-    manual: Boolean(data.manual ?? !data.bggId),
-    bggId: typeof data.bggId === "number" ? data.bggId : null,
-    eventId: coerceString(data.eventId ?? null, "") || null,
-    yearPublished: typeof data.yearPublished === "number" ? data.yearPublished : null,
-    durationMinutes: coerceNumber(data.durationMinutes ?? null),
-    weightValue: coerceNumber(data.weightValue ?? null),
-    createdAt:
-      typeof createdAt === "number"
-        ? createdAt
-        : typeof createdAt?.toDate === "function"
-          ? createdAt.toDate().getTime()
-          : null,
-    updatedAt:
-      typeof updatedAt === "number"
-        ? updatedAt
-        : typeof updatedAt?.toDate === "function"
-          ? updatedAt.toDate().getTime()
-          : null,
-  });
+    return withComputedMetrics({
+      id,
+      title: coerceString(data.title, "Juego sin ttulo"),
+      owner: coerceString(data.owner, "Participante"),
+      ownerId: coerceString(data.ownerId ?? null, "") || null,
+      ownerEmail: coerceString(data.ownerEmail ?? null, "") || null,
+      players: coerceString(data.players, "N/D"),
+      duration: coerceString(data.duration, "N/D"),
+      weight: coerceString(data.weight, "N/D"),
+      language: coerceString(data.language, "N/D"),
+      mechanics: coerceStringArray(data.mechanics),
+      coverUrl: coerceString(data.coverUrl ?? null, "") || null,
+      manual: Boolean(data.manual ?? !data.bggId),
+      bggId: typeof data.bggId === "number" ? data.bggId : null,
+      eventId: coerceString(data.eventId ?? null, "") || null,
+      yearPublished: data.yearPublished ?? null,
+      durationMinutes: data.durationMinutes ?? null,
+      weightValue: data.weightValue ?? null,
+      createdAt:
+        typeof createdAt === 'object' && createdAt && 'toDate' in createdAt && typeof (createdAt as any).toDate === 'function'
+          ? (createdAt as any).toDate().getTime()
+          : typeof createdAt === 'number'
+            ? createdAt
+            : null,
+      updatedAt:
+        typeof updatedAt === 'object' && updatedAt && 'toDate' in updatedAt && typeof (updatedAt as any).toDate === 'function'
+          ? (updatedAt as any).toDate().getTime()
+          : typeof updatedAt === 'number'
+            ? updatedAt
+            : null,
+      status: data.status === 'borrowed' ? 'borrowed' : 'available',
+      borrowedBy: data.borrowedBy ? { uid: data.borrowedBy.uid, alias: data.borrowedBy.alias } : null,
+      borrowedAt:
+        typeof borrowedAt === 'object' && borrowedAt && 'toDate' in borrowedAt && typeof (borrowedAt as any).toDate === 'function'
+          ? (borrowedAt as any).toDate().getTime()
+          : typeof borrowedAt === 'number'
+            ? borrowedAt
+            : null,
+    });
+  } catch (error) {
+    console.error(`Error mapping Firestore game with ID ${id}:`, error);
+    // Fallback to a default or partially mapped record if an error occurs
+    return withComputedMetrics({
+      id,
+      title: coerceString(data.title, "Juego sin ttulo"),
+      owner: coerceString(data.owner, "Participante"),
+      ownerId: null,
+      ownerEmail: null,
+      players: "N/D",
+      duration: "N/D",
+      weight: "N/D",
+      language: "N/D",
+      mechanics: [],
+      coverUrl: null,
+      manual: false,
+      bggId: null,
+      eventId: null,
+      yearPublished: null,
+      durationMinutes: null,
+      weightValue: null,
+      createdAt: null,
+      updatedAt: null,
+      status: 'available',
+      borrowedBy: null,
+      borrowedAt: null,
+    });
+  }
 }
 
 function resolveStorage(): Storage | null {
@@ -400,6 +468,9 @@ async function createRemoteGame(game: Required<LibraryGameInput>): Promise<Libra
     weightValue: game.weightValue ?? null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
+    status: game.status,
+    borrowedBy: game.borrowedBy,
+    borrowedAt: game.borrowedAt ? serverTimestamp() : null,
   });
 
   const snapshot = await getDoc(docRef);
@@ -427,6 +498,9 @@ async function createRemoteThroughFunction(game: Required<LibraryGameInput>): Pr
         yearPublished: game.yearPublished,
         durationMinutes: game.durationMinutes,
         weightValue: game.weightValue,
+        status: game.status,
+        borrowedBy: game.borrowedBy,
+        borrowedAt: game.borrowedAt,
       },
     });
 
@@ -440,7 +514,7 @@ async function createRemoteThroughFunction(game: Required<LibraryGameInput>): Pr
     }
 
     if (payload?.status === "error") {
-      return { status: "error", message: payload.message ?? "No se pudo a�adir el juego." };
+      return { status: "error", message: payload.message ?? "No se pudo aadir el juego." };
     }
 
     // Si no recibimos datos utilizables, hacemos una consulta manual
@@ -451,7 +525,7 @@ async function createRemoteThroughFunction(game: Required<LibraryGameInput>): Pr
 
     return { status: "success", game: normalizeToRecord(game) };
   } catch (error) {
-    console.warn("Fallo al usar la funci�n addLibraryEntry", error);
+    console.warn("Fallo al usar la funcin addLibraryEntry", error);
     return { status: "error", message: "No se pudo registrar el juego en la ludoteca." };
   }
 }
@@ -478,6 +552,9 @@ function normalizeToRecord(game: Required<LibraryGameInput>): LibraryGameRecord 
     weightValue: game.weightValue ?? null,
     createdAt: now,
     updatedAt: now,
+    status: game.status,
+    borrowedBy: game.borrowedBy,
+    borrowedAt: game.borrowedAt ?? null,
   });
 }
 
@@ -542,7 +619,7 @@ export function useLibraryService() {
             setState({ loading: false, error: null, games });
           },
           (error) => {
-            console.error("Error en la suscripci�n de la ludoteca", error);
+            console.error("Error en la suscripcin de la ludoteca", error);
             setState((current) => ({ ...current, loading: false, error: "No se pudo sincronizar la ludoteca." }));
           },
         );
@@ -609,14 +686,140 @@ export function useLibraryService() {
         const game = await createRemoteGame(normalized);
         return { status: "success", game };
       } catch (error) {
-        console.error("No se pudo a�adir el juego a la ludoteca", error);
-        return { status: "error", message: "No se pudo a�adir el juego a la ludoteca." };
+        console.error("No se pudo aadir el juego a la ludoteca", error);
+        return { status: "error", message: "No se pudo aadir el juego a la ludoteca." };
       }
     },
     [state.games],
   );
 
-  return { ...state, games: normalizedGames, addGame };
+  const borrowGame = useCallback(
+    async (gameId: string, user: { uid: string; alias: string }): Promise<LibraryActionResult> => {
+      if (useFirestore) {
+        try {
+          const docRef = doc(db, COLLECTION_NAME, gameId)
+          await setDoc(
+            docRef,
+            {
+              status: 'borrowed',
+              borrowedBy: {
+                uid: user.uid,
+                alias: user.alias,
+              },
+              borrowedAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true },
+          )
+
+          const existingGame = state.games.find(g => g.id === gameId)
+          if (!existingGame) {
+            // Should not happen if subscribed, but purely for type safety:
+            return { status: 'success', game: {} as LibraryGameRecord }
+          }
+
+          return { status: 'success', game: { ...existingGame, status: 'borrowed', borrowedBy: user, borrowedAt: Date.now() } }
+        } catch (error) {
+          console.error('Error borrowing game:', error)
+          return { status: 'error', message: 'No se pudo registrar el préstamo.' }
+        }
+      }
+
+      // Local
+      const stored = readStoredGames()
+      const index = stored.findIndex((g) => g.id === gameId)
+      if (index === -1) {
+        return { status: 'error', message: 'Juego no encontrado.' }
+      }
+
+      const game = stored[index]
+      if (game.status === 'borrowed') {
+        return { status: 'error', message: 'El juego ya está prestado.' }
+      }
+
+      const updated: LibraryGameRecord = {
+        ...game,
+        status: 'borrowed',
+        borrowedBy: user,
+        borrowedAt: Date.now(),
+        updatedAt: Date.now(),
+      }
+
+      stored[index] = updated
+      writeStoredGames(stored)
+      setState((current) => ({
+        ...current,
+        games: current.games.map((g) => (g.id === gameId ? updated : g)),
+      }))
+      return { status: 'success', game: updated }
+    },
+    [state.games],
+  )
+
+  const returnGame = useCallback(
+    async (gameId: string): Promise<LibraryActionResult> => {
+      if (useFirestore) {
+        try {
+          const docRef = doc(db, COLLECTION_NAME, gameId)
+          await setDoc(
+            docRef,
+            {
+              status: 'available',
+              borrowedBy: null,
+              borrowedAt: null,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true },
+          )
+
+          const existingGame = state.games.find(g => g.id === gameId)
+          if (!existingGame) {
+            return { status: 'success', game: {} as LibraryGameRecord }
+          }
+
+          return { status: 'success', game: { ...existingGame, status: 'available', borrowedBy: null, borrowedAt: null } }
+        } catch (error) {
+          console.error('Error returning game:', error)
+          return { status: 'error', message: 'No se pudo registrar la devolución.' }
+        }
+      }
+
+      // Local
+      const stored = readStoredGames()
+      const index = stored.findIndex((g) => g.id === gameId)
+      if (index === -1) {
+        return { status: 'error', message: 'Juego no encontrado.' }
+      }
+
+      const updated: LibraryGameRecord = {
+        ...stored[index],
+        status: 'available',
+        borrowedBy: null,
+        borrowedAt: null,
+        updatedAt: Date.now(),
+      }
+
+      stored[index] = updated
+      writeStoredGames(stored)
+      setState((current) => ({
+        ...current,
+        games: current.games.map((g) => (g.id === gameId ? updated : g)),
+      }))
+      return { status: 'success', game: updated }
+    },
+    [state.games],
+  )
+
+  return useMemo(
+    () => ({
+      ...state,
+      games: normalizedGames,
+      addGame,
+      borrowGame,
+      returnGame,
+    }),
+    [normalizedGames, state.loading, state.error, addGame, borrowGame, returnGame],
+  );
 }
 
 export async function fetchLibraryGames(): Promise<LibraryGameRecord[]> {

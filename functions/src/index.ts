@@ -412,10 +412,10 @@ async function logLibraryActivity(entry: LibraryEntryRecord, actorEmail: string 
       },
       actor: actorEmail
         ? {
-            uid: null,
-            email: actorEmail,
-            displayName: entry.owner,
-          }
+          uid: null,
+          email: actorEmail,
+          displayName: entry.owner,
+        }
         : null,
       deviceId: null,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -641,8 +641,3 @@ export const addLibraryEntry = onCall(async (request: CallableRequest<AddLibrary
     throw new HttpsError("internal", "No se pudo registrar el juego en la ludoteca.");
   }
 });
-
-
-
-
-

@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   GoogleAuthProvider,
   getRedirectResult,
-  signInWithRedirect,
+  signInWithPopup,
   signOut as firebaseSignOut,
   type AuthError as FirebaseAuthError,
 } from 'firebase/auth'
@@ -66,7 +66,6 @@ export function Access() {
 
   const profileComplete = Boolean(profile?.alias && profile?.consentAt)
   const profileRole = profile?.role ?? null
-  const hasWhitelistEntry = Boolean(authorized)
   const whitelistStatus = authorized?.status ?? null
   const isOrgRole =
     profileRole === 'organizacion' ||
@@ -470,8 +469,8 @@ export function Access() {
             ) : null}
           </div>
         </main>
-      </div>
-    </div>
+      </div >
+    </div >
   )
 }
 
@@ -504,4 +503,5 @@ function mapGoogleSignInError(error: unknown): string {
 
   return 'No se pudo iniciar sesiÃ³n con Google. IntÃ©ntalo de nuevo en unos instantes.'
 }
+
 

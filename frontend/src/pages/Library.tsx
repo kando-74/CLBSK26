@@ -10,6 +10,7 @@ import {
   Star,
   Users,
   X,
+  CheckCircle2,
 } from 'lucide-react'
 import type { BggSearchResult } from '../utils/bgg'
 import { getBoardGameDetails, searchBoardGames } from '../utils/bgg'
@@ -32,7 +33,7 @@ export function Library() {
   const userId = user?.uid ?? null
 
   const { createTable } = useTablesService()
-  const { games, loading: libraryLoading, error: libraryError, addGame } = useLibraryService()
+  const { games, loading: libraryLoading, error: libraryError, addGame, borrowGame, returnGame } = useLibraryService()
 
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<LibraryFilter>({})
@@ -62,6 +63,9 @@ export function Library() {
   })
   const [creatingTable, setCreatingTable] = useState(false)
   const [tableError, setTableError] = useState<string | null>(null)
+
+  const [processingGameId, setProcessingGameId] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const [selectedGame, setSelectedGame] = useState<LibraryGameRecord | null>(null)
 
@@ -93,17 +97,17 @@ export function Library() {
     }
 
     if (selectedOwner === 'me') {
-     if (!userId) {
-       setSelectedOwner('all')
-       setFilter((current) => ({ ...current, ownerIds: undefined, ownerNames: undefined }))
-       return
-     }
+      if (!userId) {
+        setSelectedOwner('all')
+        setFilter((current) => ({ ...current, ownerIds: undefined, ownerNames: undefined }))
+        return
+      }
 
       setFilter((current) => ({ ...current, ownerIds: [userId!], ownerNames: undefined }))
-     return
-   }
+      return
+    }
 
-   const option = ownerOptions.find((item) => item.value === selectedOwner)
+    const option = ownerOptions.find((item) => item.value === selectedOwner)
     if (!option) {
       setSelectedOwner('all')
       setFilter((current) => ({ ...current, ownerIds: undefined, ownerNames: undefined }))
@@ -282,6 +286,51 @@ export function Library() {
     [],
   )
 
+  const handleBorrow = useCallback(async (game: LibraryGameRecord) => {
+    if (!user || !localAlias) {
+      setActionError('Debes identificarte primero para sacar juegos.')
+      return
+    }
+
+    setProcessingGameId(game.id)
+    setActionError(null)
+
+    try {
+      const result = await borrowGame(game.id, { uid: user.uid, alias: localAlias })
+      if (result.status === 'success') {
+        setSelectedGame(result.game) // Update modal with new status
+      } else if (result.status === 'error') {
+        setActionError(result.message)
+      } else {
+        setActionError('No se pudo sacar el juego.')
+      }
+    } catch (error) {
+      setActionError('Error al contactar con el servidor.')
+    } finally {
+      setProcessingGameId(null)
+    }
+  }, [user, localAlias, borrowGame])
+
+  const handleReturn = useCallback(async (game: LibraryGameRecord) => {
+    setProcessingGameId(game.id)
+    setActionError(null)
+
+    try {
+      const result = await returnGame(game.id)
+      if (result.status === 'success') {
+        setSelectedGame(result.game) // Update modal with new status
+      } else if (result.status === 'error') {
+        setActionError(result.message)
+      } else {
+        setActionError('No se pudo devolver el juego.')
+      }
+    } catch (error) {
+      setActionError('Error al contactar con el servidor.')
+    } finally {
+      setProcessingGameId(null)
+    }
+  }, [returnGame])
+
   const handleCloseTable = useCallback(() => {
     setShowTableModal(false)
     setTableDraft({ game: null, seats: 4, start: '', room: '', description: '' })
@@ -451,7 +500,7 @@ export function Library() {
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-text-secondary">
               <tr>
                 <th className="px-4 py-3 font-semibold">Juego</th>
-                <th className="px-4 py-3 font-semibold">AÃ±o</th>
+                <th className="px-4 py-3 font-semibold">Estado</th>
                 <th className="px-4 py-3 font-semibold hidden md:table-cell">Propietario</th>
                 <th className="px-4 py-3 font-semibold hidden md:table-cell">DuraciÃ³n (min)</th>
                 <th className="px-4 py-3 font-semibold hidden md:table-cell">Peso BGG</th>
@@ -467,7 +516,19 @@ export function Library() {
                   <td className="px-4 py-3">
                     <span className="font-semibold text-text-primary">{game.title}</span>
                   </td>
-                  <td className="px-4 py-3 text-text-secondary">{game.yearPublished ?? 'N/D'}</td>
+                  <td className="px-4 py-3 text-text-secondary">
+                    {game.status === 'borrowed' ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                        <Users className="h-3 w-3" />
+                        Prestado
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Disponible
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-text-secondary hidden md:table-cell">{game.owner}</td>
                   <td className="px-4 py-3 text-text-secondary hidden md:table-cell">
                     {game.durationMinutes ?? 'N/D'}
@@ -629,6 +690,14 @@ export function Library() {
               <div>
                 <h3 className="text-lg font-semibold text-text-primary">{selectedGame.title}</h3>
                 <p className="text-sm text-text-secondary">Propietario: {selectedGame.owner}</p>
+                {selectedGame.status === 'borrowed' && selectedGame.borrowedBy ? (
+                  <p className="mt-1 text-sm font-medium text-amber-600">
+                    En uso por {selectedGame.borrowedBy.alias}
+                    {selectedGame.borrowedAt ? ` desde las ${new Date(selectedGame.borrowedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-sm font-medium text-emerald-600">Disponible en ludoteca</p>
+                )}
               </div>
               <button onClick={() => setSelectedGame(null)} className="text-sm font-semibold text-primary inline-flex items-center gap-1">
                 Cerrar
@@ -687,7 +756,28 @@ export function Library() {
                   <ClipboardList className="h-3.5 w-3.5" />
                   Registrar partida
                 </button>
+
+                {selectedGame.status === 'available' ? (
+                  <button
+                    onClick={() => handleBorrow(selectedGame)}
+                    disabled={processingGameId === selectedGame.id}
+                    className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-1 text-xs font-semibold text-white shadow-card transition-colors hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {processingGameId === selectedGame.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BookmarkCheck className="h-3.5 w-3.5" />}
+                    SACAR JUEGO
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleReturn(selectedGame)}
+                    disabled={processingGameId === selectedGame.id}
+                    className="inline-flex items-center gap-2 rounded-full bg-slate-200 px-4 py-1 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-300 disabled:opacity-50"
+                  >
+                    {processingGameId === selectedGame.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BookmarkCheck className="h-3.5 w-3.5" />}
+                    DEVOLVER
+                  </button>
+                )}
               </div>
+              {actionError && <p className="w-full text-xs text-error mt-2">{actionError}</p>}
               <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
                 <Users className="h-4 w-4" />
                 Ideal 4 jugadores

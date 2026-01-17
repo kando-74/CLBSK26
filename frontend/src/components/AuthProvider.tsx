@@ -11,6 +11,9 @@ type UserPreferences = {
   notifications?: boolean
   darkMode?: boolean
   availableToPlay?: boolean
+  availabilityNote?: string
+  interestTags?: string[]
+  radarMode?: 'manual' | 'auto'
 }
 
 type WhitelistStatus = 'approved' | 'pending' | 'revoked'
@@ -43,8 +46,9 @@ type AuthContextValue = {
   profileLoading: boolean
   authorized: AuthorizedEntry | null
   authorizedLoading: boolean
+  authorizedError: string | null
   localAlias: string | null
-  updateLocalAlias: (alias: string) => void
+  updateLocalAlias: (_alias: string) => void
   signOut: () => Promise<void>
 }
 
@@ -57,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profileLoading, setProfileLoading] = useState(true)
   const [authorized, setAuthorized] = useState<AuthorizedEntry | null>(null)
   const [authorizedLoading, setAuthorizedLoading] = useState(false)
+  const [authorizedError, setAuthorizedError] = useState<string | null>(null)
   const [localAlias, setLocalAliasState] = useState<string | null>(() => getLocalAlias())
 
   useEffect(() => {
@@ -82,11 +87,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfileLoading(false)
       setAuthorized(null)
       setAuthorizedLoading(false)
+      setAuthorizedError(null)
       return
     }
 
     setProfileLoading(true)
     setAuthorizedLoading(true)
+    setAuthorizedError(null)
     const profileRef = doc(db, 'users', user.uid)
     const unsubscribeProfile = onSnapshot(
       profileRef,
@@ -124,10 +131,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const data = snapshot.data()
         setAuthorized(data ? mapAuthorized(data) : null)
         setAuthorizedLoading(false)
+        setAuthorizedError(null)
       },
-      () => {
+      (error) => {
+        console.error('Authorized snapshot error:', error)
         setAuthorized(null)
         setAuthorizedLoading(false)
+        setAuthorizedError(error.message)
       },
     )
 
@@ -145,6 +155,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profileLoading,
       authorized,
       authorizedLoading,
+      authorizedError,
       localAlias,
       updateLocalAlias: (alias: string) => {
         const normalized = alias.trim()
@@ -153,7 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       signOut: () => firebaseSignOut(auth),
     }),
-    [authorized, authorizedLoading, localAlias, loading, profile, profileLoading, user],
+    [authorized, authorizedLoading, authorizedError, localAlias, loading, profile, profileLoading, user],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
@@ -181,6 +192,9 @@ function mapProfile(data: DocumentData): UserProfile {
       notifications: data.preferences?.notifications ?? false,
       darkMode: data.preferences?.darkMode ?? false,
       availableToPlay: data.preferences?.availableToPlay ?? false,
+      availabilityNote: data.preferences?.availabilityNote ?? '',
+      interestTags: data.preferences?.interestTags ?? [],
+      radarMode: data.preferences?.radarMode ?? 'manual',
     },
     avatarUrl: data.avatarUrl ?? undefined,
     avatarStoragePath: data.avatarStoragePath ?? undefined,

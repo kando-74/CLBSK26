@@ -17,6 +17,7 @@ import { UserLink } from '../components/UserLink'
 import { useLiveEvents } from '../components/LiveEventsProvider'
 import { Tooltip } from '../components/Tooltip'
 import { useUsers } from '../services/users'
+import { PlayerRadar } from '../components/PlayerRadar'
 
 type FilterState = {
   hideFull: boolean
@@ -32,6 +33,7 @@ type NewTableState = {
   start: string
   room: string
   description: string
+  tags: string[]
 }
 
 type FeedbackTone = 'success' | 'warning' | 'error'
@@ -55,7 +57,16 @@ const INITIAL_NEW_TABLE: NewTableState = {
   start: '',
   room: '',
   description: '',
+  tags: [],
 }
+
+const INTEREST_OPTIONS = [
+  { id: 'filler', label: 'Filler' },
+  { id: 'party', label: 'Party' },
+  { id: 'eurogame', label: 'Eurogame' },
+  { id: 'wargame', label: 'Wargame' },
+  { id: 'ligero', label: 'Juego ligero' },
+]
 
 const FEEDBACK_TONE_STYLES: Record<FeedbackTone, string> = {
   success: 'border-success/30 bg-success/10 text-success focus-visible:outline-success',
@@ -100,7 +111,7 @@ function renderUserList(names: string[]) {
     .map((name, index) => (
       <span key={`${name}-${index}`}>
         {index > 0 && ', '}
-                <UserLink player={{ uid: name, alias: name }} />
+        <UserLink player={{ uid: name, alias: name }} />
       </span>
     ))
 }
@@ -249,9 +260,8 @@ function StartTableDialog({ table, pending, busyPlayerUids, onConfirm, onDismiss
                 return (
                   <label
                     key={`${table.id}-player-${name}`}
-                    className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                      selected ? 'bg-primary text-white shadow-card' : 'bg-background text-text-secondary hover:bg-primary/10 hover:text-primary'
-                    }`}
+                    className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${selected ? 'bg-primary text-white shadow-card' : 'bg-background text-text-secondary hover:bg-primary/10 hover:text-primary'
+                      }`}
                   >
                     <input
                       type="checkbox"
@@ -465,6 +475,7 @@ export const BoardPage: React.FC = () => {
   const [newTable, setNewTable] = useState<NewTableState>(() => ({
     ...INITIAL_NEW_TABLE,
     host: userDisplayName,
+    tags: [],
   }))
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback | null>(null)
   const [pendingJoinId, setPendingJoinId] = useState<string | null>(null)
@@ -675,6 +686,15 @@ export const BoardPage: React.FC = () => {
     }
   }
 
+  function handleToggleTag(tagId: string) {
+    setNewTable((prev) => {
+      const current = prev.tags
+      const next = current.includes(tagId)
+        ? current.filter((t) => t !== tagId)
+        : [...current, tagId]
+      return { ...prev, tags: next }
+    })
+  }
 
   async function handleCreateTable(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -711,6 +731,7 @@ export const BoardPage: React.FC = () => {
         start: trimmedStart || 'Por confirmar',
         room: trimmedRoom || 'Por confirmar',
         description: trimmedDescription,
+        tags: newTable.tags,
       })
 
       setActionFeedback({
@@ -752,452 +773,478 @@ export const BoardPage: React.FC = () => {
         </button>
       </header>
 
-      <div className="card flex flex-wrap items-center justify-between gap-3 p-5 text-sm text-text-secondary">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="rounded-full bg-background px-3 py-1">Sala: {filters.room}</span>
-          <span className="rounded-full bg-background px-3 py-1">Ocultar llenas: {filters.hideFull ? 'Sí' : 'No'}</span>
-          <span className="rounded-full bg-background px-3 py-1">Ocultar apuntadas: {filters.hideJoined ? 'Sí' : 'No'}</span>
-          <span className="rounded-full bg-background px-3 py-1">Ocultar finalizadas: {filters.hideCompleted ? 'Sí' : 'No'}</span>
-        </div>
-        <button
-          onClick={() => setShowFilters((value) => !value)}
-          className="text-sm font-semibold text-primary"
-        >
-          Gestionar filtros
-        </button>
-      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
+        {/* Main Content: Tables (3 columns on desktop) */}
+        <div className="lg:col-span-3 space-y-6">
 
-      {showCreateForm && (
-        <section className="card space-y-4 p-5" aria-label="Publicar nueva mesa">
-          <h3 className="text-lg font-semibold text-text-primary">Publicar nueva mesa</h3>
-          <p className="text-sm text-text-secondary">
-            Rellena los detalles principales para que otras personas puedan unirse rápidamente a tu partida.
-          </p>
-          <form noValidate onSubmit={handleCreateTable} className="grid gap-4 md:grid-cols-2">
-            <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
-              <span className="text-xs uppercase tracking-wide">Juego</span>
-              <input
-                className="w-full bg-transparent text-base text-text-primary outline-none"
-                value={newTable.game}
-                onChange={(event) => {
-                  const { value } = event.currentTarget
-                  setNewTable((current) => ({ ...current, game: value }))
-                }}
-                placeholder="Nombre del juego"
-                required
-              />
-            </label>
-            <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
-              <span className="text-xs uppercase tracking-wide">Anfitrión</span>
-              <input
-                className="w-full bg-transparent text-base text-text-primary outline-none"
-                value={newTable.host}
-                onChange={(event) => {
-                  const { value } = event.currentTarget
-                  setNewTable((current) => ({ ...current, host: value }))
-                }}
-                placeholder="Tu nombre o alias"
-              />
-            </label>
-            <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
-              <span className="text-xs uppercase tracking-wide">Plazas totales</span>
-              <input
-                type="number"
-                min={1}
-                max={8}
-                className="w-full bg-transparent text-base text-text-primary outline-none"
-                value={newTable.seats}
-                onChange={(event) => {
-                  const { value } = event.currentTarget
-                  setNewTable((current) => ({ ...current, seats: Number(value) || 1 }))
-                }}
-              />
-            </label>
-            <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
-              <span className="text-xs uppercase tracking-wide">Horario estimado</span>
-              <input
-                className="w-full bg-transparent text-base text-text-primary outline-none"
-                value={newTable.start}
-                onChange={(event) => {
-                  const { value } = event.currentTarget
-                  setNewTable((current) => ({ ...current, start: value }))
-                }}
-                placeholder="Ej. 19:30"
-              />
-            </label>
-            <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary md:col-span-2">
-              <span className="text-xs uppercase tracking-wide">Sala</span>
-              <input
-                className="w-full bg-transparent text-base text-text-primary outline-none"
-                value={newTable.room}
-                onChange={(event) => {
-                  const { value } = event.currentTarget
-                  setNewTable((current) => ({ ...current, room: value }))
-                }}
-                placeholder="Sala o ubicación"
-              />
-            </label>
-            <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary md:col-span-2">
-              <span className="text-xs uppercase tracking-wide">Descripción</span>
-              <textarea
-                className="h-24 w-full resize-none bg-transparent text-sm text-text-secondary outline-none"
-                value={newTable.description}
-                onChange={(event) => {
-                  const { value } = event.currentTarget
-                  setNewTable((current) => ({ ...current, description: value }))
-                }}
-                placeholder="Añade detalles relevantes: nivel, módulos, si explicas reglas..."
-                required
-              />
-            </label>
-            <div className="md:col-span-2">
-              <button
-                type="submit"
-                disabled={submitting}
-                className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/60"
-              >
-                {submitting ? 'Publicando...' : 'Publicar mesa'}
-              </button>
+          <div className="card flex flex-wrap items-center justify-between gap-3 p-5 text-sm text-text-secondary">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="rounded-full bg-background px-3 py-1">Sala: {filters.room}</span>
+              <span className="rounded-full bg-background px-3 py-1">Ocultar llenas: {filters.hideFull ? 'Sí' : 'No'}</span>
+              <span className="rounded-full bg-background px-3 py-1">Ocultar apuntadas: {filters.hideJoined ? 'Sí' : 'No'}</span>
+              <span className="rounded-full bg-background px-3 py-1">Ocultar finalizadas: {filters.hideCompleted ? 'Sí' : 'No'}</span>
             </div>
-          </form>
-        </section>
-      )}
-
-      {showFilters && (
-        <section className="card space-y-4 p-5" aria-label="Filtrar mesas">
-          <h3 className="text-lg font-semibold text-text-primary">Filtrar mesas</h3>
-          <div className="grid gap-3 md:grid-cols-3">
-            <label className="flex items-center gap-3 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
-              <input
-                type="checkbox"
-                checked={filters.hideFull}
-                onChange={(event) => handleToggleFilter('hideFull', event.target.checked)}
-                className="h-4 w-4"
-              />
-              Ocultar mesas sin plazas libres
-            </label>
-            <label className="flex items-center gap-3 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
-              <input
-                type="checkbox"
-                checked={filters.hideJoined}
-                onChange={(event) => handleToggleFilter('hideJoined', event.target.checked)}
-                className="h-4 w-4"
-              />
-              Ocultar mesas donde ya estás apuntado
-            </label>
-            <label className="flex items-center gap-3 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
-              <input
-                type="checkbox"
-                checked={filters.hideCompleted}
-                onChange={(event) => handleToggleFilter('hideCompleted', event.target.checked)}
-                className="h-4 w-4"
-              />
-              Ocultar partidas finalizadas
-            </label>
-            <label className="rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
-              <span className="block text-xs uppercase tracking-wide">Sala</span>
-              <select
-                className="mt-2 w-full bg-transparent text-base text-text-primary outline-none"
-                value={filters.room}
-                onChange={(event) => {
-                  const { value } = event.currentTarget
-                  setFilters((current) => ({ ...current, room: value }))
-                }}
-              >
-                {availableRooms.map((roomOption) => (
-                  <option key={roomOption} value={roomOption}>
-                    {roomOption}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </section>
-      )}
-
-      {error && (
-        <div
-          role="alert"
-          className="rounded-2xl border border-error/40 bg-error/10 px-4 py-3 text-sm text-error"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span>{error}</span>
             <button
-              onClick={() => {
-                void handleRetry()
-              }}
-              className="rounded-full bg-error px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-error/80"
+              onClick={() => setShowFilters((value) => !value)}
+              className="text-sm font-semibold text-primary"
             >
-              Reintentar
+              Gestionar filtros
             </button>
           </div>
-        </div>
-      )}
 
-      {actionFeedback && (
-        <div
-          ref={actionMessageRef}
-          tabIndex={-1}
-          role="status"
-          aria-live="assertive"
-          aria-atomic="true"
-          className={`rounded-2xl border px-4 py-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 ${FEEDBACK_TONE_STYLES[actionFeedback.tone]}`}
-        >
-          {actionFeedback.message}
-        </div>
-      )}
-
-      {loading && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="rounded-2xl border border-primary/20 bg-white px-4 py-3 text-sm text-text-secondary"
-        >
-          Cargando mesas disponibles...
-        </div>
-      )}
-
-      {hasNoTables && !loading && (
-        <section className="card space-y-3 p-5">
-          <h3 className="text-lg font-semibold text-text-primary">No hay mesas que coincidan con los filtros</h3>
-          <p className="text-sm text-text-secondary">
-            Modifica los filtros o publica un anuncio para que otras personas puedan unirse a tu partida.
-          </p>
-          <button
-            onClick={() => setShowCreateForm(true)}
-            className="inline-flex items-center gap-2 self-start rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
-          >
-            Publicar mesa
-          </button>
-        </section>
-      )}
-
-      {!hasNoTables && (
-        <section className="space-y-4 md:grid md:grid-cols-2 md:gap-4 md:space-y-0">
-          {filteredTables.map((table) => {
-            const statusMeta = TABLE_STATUS_META[table.status]
-            const participantNamesLower = table.participants.map((participant) => participant.name.toLowerCase())
-            const currentPlayersLower = table.currentPlayers.map((participant) => participant.name.toLowerCase())
-            const isHost = table.host.trim().toLowerCase() === normalizedUserName && normalizedUserName.length > 0
-            const isParticipant = participantNamesLower.includes(normalizedUserName)
-            const isCurrentPlayer = currentPlayersLower.includes(normalizedUserName)
-            const canStart = table.status === 'open' && (isHost || isParticipant)
-            const canCancel = table.status === 'open' && isHost
-            const canFinish = table.status === 'in-progress' && (isHost || isParticipant || isCurrentPlayer)
-            const joinDisabled =
-              table.seats.taken >= table.seats.total ||
-              table.joined ||
-              pendingJoinId === table.id ||
-              table.status !== 'open'
-
-            const joinLabel = (() => {
-              if (pendingJoinId === table.id) {
-                return 'Reservando...'
-              }
-              if (table.status === 'in-progress') {
-                return 'En juego'
-              }
-              if (table.status === 'completed') {
-                return 'Finalizada'
-              }
-              if (table.joined) {
-                return 'Apuntado'
-              }
-              if (table.seats.taken >= table.seats.total) {
-                return 'Completa'
-              }
-              return 'Apuntarme'
-            })()
-
-            const startedLabel = formatTimeFromTimestamp(table.startedAt)
-            const completionLabel = formatTimeFromTimestamp(table.completedAt)
-            const currentPlayersNames = table.currentPlayers.length > 0
-              ? table.currentPlayers.map((participant) => participant.name)
-              : table.participants.map((participant) => participant.name)
-            const currentPlayersNodes = renderUserList(currentPlayersNames)
-
-            const tableHighlight = getTableHighlight(table.id)
-            const cardHighlightClass = tableHighlight || highlightedTableId === table.id
-              ? 'ring-2 ring-primary/40 shadow-[0_18px_50px_rgba(99,102,241,0.25)]'
-              : ''
-
-            return (
-              <article id={table.id} key={table.id} className={`card space-y-4 p-5 transition-shadow duration-200 ${cardHighlightClass}`}>
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div className="space-y-2">
-                    <p className="text-xs uppercase tracking-wide text-text-secondary">Juego</p>
-                    <GameTitle
-                      name={table.game}
-                      coverUrl={table.coverUrl ?? undefined}
-                      size="md"
-                      textClassName="text-xl"
-                      role="heading"
-                      aria-level={3}
-                    >
-                      <p className="text-sm font-normal text-text-secondary">
-                        Anfitrión: <UserLink player={{ uid: table.host, alias: table.host }} />
-                      </p>
-                    </GameTitle>
-                  </div>
-                  <div className="flex flex-col items-start justify-end gap-2 md:items-end">
-                    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${statusMeta.badgeClass}`}>
-                      {statusMeta.label}
-                    </span>
-                    {tableHighlight && (
-                      <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-                        <Sparkles className="h-3 w-3" />
-                        Actualizado {tableHighlight.label}
-                      </span>
-                    )}
-                    <div className="flex items-center gap-3">
-                      <span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
-                        {Math.max(0, table.seats.total - table.seats.taken)} plazas libres
-                      </span>
+          {showCreateForm && (
+            <section className="card space-y-4 p-5" aria-label="Publicar nueva mesa">
+              <h3 className="text-lg font-semibold text-text-primary">Publicar nueva mesa</h3>
+              <p className="text-sm text-text-secondary">
+                Rellena los detalles principales para que otras personas puedan unirse rápidamente a tu partida.
+              </p>
+              <form noValidate onSubmit={handleCreateTable} className="grid gap-4 md:grid-cols-2">
+                <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
+                  <span className="text-xs uppercase tracking-wide">Juego</span>
+                  <input
+                    className="w-full bg-transparent text-base text-text-primary outline-none"
+                    value={newTable.game}
+                    onChange={(event) => {
+                      const { value } = event.currentTarget
+                      setNewTable((current) => ({ ...current, game: value }))
+                    }}
+                    placeholder="Nombre del juego"
+                    required
+                  />
+                </label>
+                <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
+                  <span className="text-xs uppercase tracking-wide">Anfitrión</span>
+                  <input
+                    className="w-full bg-transparent text-base text-text-primary outline-none"
+                    value={newTable.host}
+                    onChange={(event) => {
+                      const { value } = event.currentTarget
+                      setNewTable((current) => ({ ...current, host: value }))
+                    }}
+                    placeholder="Tu nombre o alias"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
+                  <span className="text-xs uppercase tracking-wide">Plazas totales</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={8}
+                    className="w-full bg-transparent text-base text-text-primary outline-none"
+                    value={newTable.seats}
+                    onChange={(event) => {
+                      const { value } = event.currentTarget
+                      setNewTable((current) => ({ ...current, seats: Number(value) || 1 }))
+                    }}
+                  />
+                </label>
+                <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
+                  <span className="text-xs uppercase tracking-wide">Horario estimado</span>
+                  <input
+                    className="w-full bg-transparent text-base text-text-primary outline-none"
+                    value={newTable.start}
+                    onChange={(event) => {
+                      const { value } = event.currentTarget
+                      setNewTable((current) => ({ ...current, start: value }))
+                    }}
+                    placeholder="Ej. 19:30"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary md:col-span-2">
+                  <span className="text-xs uppercase tracking-wide">Sala</span>
+                  <input
+                    className="w-full bg-transparent text-base text-text-primary outline-none"
+                    value={newTable.room}
+                    onChange={(event) => {
+                      const { value } = event.currentTarget
+                      setNewTable((current) => ({ ...current, room: value }))
+                    }}
+                    placeholder="Sala o ubicación"
+                  />
+                </label>
+                <div className="md:col-span-2 space-y-2">
+                  <p className="text-xs uppercase tracking-wide text-text-secondary">Categorías / Etiquetas</p>
+                  <div className="flex flex-wrap gap-2">
+                    {INTEREST_OPTIONS.map((opt) => (
                       <button
-                        onClick={() => {
-                          void handleJoin(table.id)
-                        }}
-                        disabled={joinDisabled}
-                        className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/60"
+                        key={opt.id}
+                        type="button"
+                        onClick={() => handleToggleTag(opt.id)}
+                        className={`py-1.5 px-3 rounded-full border text-xs font-medium transition-colors ${newTable.tags.includes(opt.id) ? 'bg-secondary text-white border-secondary' : 'bg-surface-elevation-1 text-text-secondary border-primary/10'}`}
                       >
-                        {joinLabel}
+                        {opt.label}
                       </button>
-                    </div>
-                  </div>
-                </div>
-                <p className="text-sm text-text-secondary">{table.description}</p>
-                {table.participants.length > 0 && (
-                  <div className="flex flex-wrap gap-2 text-xs text-text-secondary">
-                    <span className="rounded-full bg-background px-3 py-1 font-semibold text-text-primary">Participantes</span>
-                    {table.participants.map((participant) => (
-                      <span
-                        key={`${table.id}-${participant.deviceId ?? participant.name}`}
-                        className="rounded-full bg-background px-3 py-1"
-                      >
-                        <UserLink player={{ uid: participant.uid ?? participant.name, alias: participant.name }} className="text-text-secondary hover:text-primary" />
-                      </span>
                     ))}
                   </div>
-                )}
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
-                    <p className="flex items-center gap-2 text-text-primary">
-                      <Clock className="h-4 w-4" />
-                      {table.start}
-                    </p>
-                    <p>Inicio estimado</p>
-                  </div>
-                  <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
-                    <p className="flex items-center gap-2 text-text-primary">
-                      <MapPin className="h-4 w-4" />
-                      {table.room}
-                    </p>
-                    <p>Ubicación</p>
-                  </div>
-                  <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
-                    <p className="flex items-center gap-2 text-text-primary">
-                      <CalendarCheck className="h-4 w-4" />
-                      {table.status === 'in-progress' ? 'Partida en marcha' : 'Se convierte en partida'}
-                    </p>
-                    <p>{table.status === 'in-progress' ? 'Confirmada por los jugadores' : 'Tras confirmar plazas'}</p>
-                  </div>
                 </div>
+                <label className="flex flex-col gap-2 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary md:col-span-2">
+                  <span className="text-xs uppercase tracking-wide">Descripción</span>
+                  <textarea
+                    className="h-24 w-full resize-none bg-transparent text-sm text-text-secondary outline-none"
+                    value={newTable.description}
+                    onChange={(event) => {
+                      const { value } = event.currentTarget
+                      setNewTable((current) => ({ ...current, description: value }))
+                    }}
+                    placeholder="Añade detalles relevantes: nivel, módulos, si explicas reglas..."
+                    required
+                  />
+                </label>
+                <div className="md:col-span-2">
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/60"
+                  >
+                    {submitting ? 'Publicando...' : 'Publicar mesa'}
+                  </button>
+                </div>
+              </form>
+            </section>
+          )}
 
-                {table.status === 'in-progress' && (
-                  <div className="rounded-2xl border border-secondary/30 bg-secondary/10 px-4 py-3 text-sm text-text-secondary">
-                    <p className="font-semibold text-text-primary">Partida en juego</p>
-                    <p>
-                      Jugadores: {currentPlayersNodes}
-                    </p>
-                    {startedLabel && <p>Inicio: {startedLabel}</p>}
-                  </div>
-                )}
+          {showFilters && (
+            <section className="card space-y-4 p-5" aria-label="Filtrar mesas">
+              <h3 className="text-lg font-semibold text-text-primary">Filtrar mesas</h3>
+              <div className="grid gap-3 md:grid-cols-3">
+                <label className="flex items-center gap-3 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
+                  <input
+                    type="checkbox"
+                    checked={filters.hideFull}
+                    onChange={(event) => handleToggleFilter('hideFull', event.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Ocultar mesas sin plazas libres
+                </label>
+                <label className="flex items-center gap-3 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
+                  <input
+                    type="checkbox"
+                    checked={filters.hideJoined}
+                    onChange={(event) => handleToggleFilter('hideJoined', event.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Ocultar mesas donde ya estás apuntado
+                </label>
+                <label className="flex items-center gap-3 rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
+                  <input
+                    type="checkbox"
+                    checked={filters.hideCompleted}
+                    onChange={(event) => handleToggleFilter('hideCompleted', event.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  Ocultar partidas finalizadas
+                </label>
+                <label className="rounded-2xl border border-primary/20 px-4 py-3 text-sm text-text-secondary">
+                  <span className="block text-xs uppercase tracking-wide">Sala</span>
+                  <select
+                    className="mt-2 w-full bg-transparent text-base text-text-primary outline-none"
+                    value={filters.room}
+                    onChange={(event) => {
+                      const { value } = event.currentTarget
+                      setFilters((current) => ({ ...current, room: value }))
+                    }}
+                  >
+                    {availableRooms.map((roomOption) => (
+                      <option key={roomOption} value={roomOption}>
+                        {roomOption}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </section>
+          )}
 
-                {table.status === 'completed' && (
-                  <div className="space-y-2 rounded-2xl border border-emerald-300/60 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                    <p className="font-semibold">Resultado registrado</p>
-                    <p>{table.resultSummary ?? 'Partida finalizada sin resumen.'}</p>
-                    {completionLabel && <p className="text-xs text-emerald-800/80">Cierre: {completionLabel}</p>}
-                    {Object.keys(table.chronicles).length > 0 && (
+          {error && (
+            <div
+              role="alert"
+              className="rounded-2xl border border-error/40 bg-error/10 px-4 py-3 text-sm text-error"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span>{error}</span>
+                <button
+                  onClick={() => {
+                    void handleRetry()
+                  }}
+                  className="rounded-full bg-error px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-error/80"
+                >
+                  Reintentar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {actionFeedback && (
+            <div
+              ref={actionMessageRef}
+              tabIndex={-1}
+              role="status"
+              aria-live="assertive"
+              aria-atomic="true"
+              className={`rounded-2xl border px-4 py-3 text-sm font-medium focus-visible:outline focus-visible:outline-2 ${FEEDBACK_TONE_STYLES[actionFeedback.tone]}`}
+            >
+              {actionFeedback.message}
+            </div>
+          )}
+
+          {loading && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="rounded-2xl border border-primary/20 bg-white px-4 py-3 text-sm text-text-secondary"
+            >
+              Cargando mesas disponibles...
+            </div>
+          )}
+
+          {hasNoTables && !loading && (
+            <section className="card space-y-3 p-5">
+              <h3 className="text-lg font-semibold text-text-primary">No hay mesas que coincidan con los filtros</h3>
+              <p className="text-sm text-text-secondary">
+                Modifica los filtros o publica un anuncio para que otras personas puedan unirse a tu partida.
+              </p>
+              <button
+                onClick={() => setShowCreateForm(true)}
+                className="inline-flex items-center gap-2 self-start rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90"
+              >
+                Publicar mesa
+              </button>
+            </section>
+          )}
+
+          {!hasNoTables && (
+            <section className="space-y-4 md:grid md:grid-cols-2 md:gap-4 md:space-y-0">
+              {filteredTables.map((table) => {
+                const statusMeta = TABLE_STATUS_META[table.status]
+                const participantNamesLower = table.participants.map((participant) => participant.name.toLowerCase())
+                const currentPlayersLower = table.currentPlayers.map((participant) => participant.name.toLowerCase())
+                const isHost = table.host.trim().toLowerCase() === normalizedUserName && normalizedUserName.length > 0
+                const isParticipant = participantNamesLower.includes(normalizedUserName)
+                const isCurrentPlayer = currentPlayersLower.includes(normalizedUserName)
+                const canStart = table.status === 'open' && (isHost || isParticipant)
+                const canCancel = table.status === 'open' && isHost
+                const canFinish = table.status === 'in-progress' && (isHost || isParticipant || isCurrentPlayer)
+                const joinDisabled =
+                  table.seats.taken >= table.seats.total ||
+                  table.joined ||
+                  pendingJoinId === table.id ||
+                  table.status !== 'open'
+
+                const joinLabel = (() => {
+                  if (pendingJoinId === table.id) {
+                    return 'Reservando...'
+                  }
+                  if (table.status === 'in-progress') {
+                    return 'En juego'
+                  }
+                  if (table.status === 'completed') {
+                    return 'Finalizada'
+                  }
+                  if (table.joined) {
+                    return 'Apuntado'
+                  }
+                  if (table.seats.taken >= table.seats.total) {
+                    return 'Completa'
+                  }
+                  return 'Apuntarme'
+                })()
+
+                const startedLabel = formatTimeFromTimestamp(table.startedAt)
+                const completionLabel = formatTimeFromTimestamp(table.completedAt)
+                const currentPlayersNames = table.currentPlayers.length > 0
+                  ? table.currentPlayers.map((participant) => participant.name)
+                  : table.participants.map((participant) => participant.name)
+                const currentPlayersNodes = renderUserList(currentPlayersNames)
+
+                const tableHighlight = getTableHighlight(table.id)
+                const cardHighlightClass = tableHighlight || highlightedTableId === table.id
+                  ? 'ring-2 ring-primary/40 shadow-[0_18px_50px_rgba(99,102,241,0.25)]'
+                  : ''
+
+                return (
+                  <article id={table.id} key={table.id} className={`card space-y-4 p-5 transition-shadow duration-200 ${cardHighlightClass}`}>
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div className="space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800/90">Crónicas</p>
-                        {Object.entries(table.chronicles).map(([player, chronicle]) => (
-                          <div key={`${table.id}-chronicle-${player}`} className="rounded-xl bg-white/70 px-3 py-2 text-xs text-emerald-900">
-                            <p className="font-semibold text-emerald-800">{player}</p>
-                            <p>{chronicle}</p>
-                          </div>
+                        <p className="text-xs uppercase tracking-wide text-text-secondary">Juego</p>
+                        <GameTitle
+                          name={table.game}
+                          coverUrl={table.coverUrl ?? undefined}
+                          size="md"
+                          textClassName="text-xl"
+                          role="heading"
+                          aria-level={3}
+                        >
+                          <p className="text-sm font-normal text-text-secondary">
+                            Anfitrión: <UserLink player={{ uid: table.host, alias: table.host }} />
+                          </p>
+                        </GameTitle>
+                      </div>
+                      <div className="flex flex-col items-start justify-end gap-2 md:items-end">
+                        <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${statusMeta.badgeClass}`}>
+                          {statusMeta.label}
+                        </span>
+                        {tableHighlight && (
+                          <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                            <Sparkles className="h-3 w-3" />
+                            Actualizado {tableHighlight.label}
+                          </span>
+                        )}
+                        <div className="flex items-center gap-3">
+                          <span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
+                            {Math.max(0, table.seats.total - table.seats.taken)} plazas libres
+                          </span>
+                          <button
+                            onClick={() => {
+                              void handleJoin(table.id)
+                            }}
+                            disabled={joinDisabled}
+                            className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/60"
+                          >
+                            {joinLabel}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-sm text-text-secondary">{table.description}</p>
+                    {table.participants.length > 0 && (
+                      <div className="flex flex-wrap gap-2 text-xs text-text-secondary">
+                        <span className="rounded-full bg-background px-3 py-1 font-semibold text-text-primary">Participantes</span>
+                        {table.participants.map((participant) => (
+                          <span
+                            key={`${table.id}-${participant.deviceId ?? participant.name}`}
+                            className="rounded-full bg-background px-3 py-1"
+                          >
+                            <UserLink player={{ uid: participant.uid ?? participant.name, alias: participant.name }} className="text-text-secondary hover:text-primary" />
+                          </span>
                         ))}
                       </div>
                     )}
-                  </div>
-                )}
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
+                        <p className="flex items-center gap-2 text-text-primary">
+                          <Clock className="h-4 w-4" />
+                          {table.start}
+                        </p>
+                        <p>Inicio estimado</p>
+                      </div>
+                      <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
+                        <p className="flex items-center gap-2 text-text-primary">
+                          <MapPin className="h-4 w-4" />
+                          {table.room}
+                        </p>
+                        <p>Ubicación</p>
+                      </div>
+                      <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-secondary">
+                        <p className="flex items-center gap-2 text-text-primary">
+                          <CalendarCheck className="h-4 w-4" />
+                          {table.status === 'in-progress' ? 'Partida en marcha' : 'Se convierte en partida'}
+                        </p>
+                        <p>{table.status === 'in-progress' ? 'Confirmada por los jugadores' : 'Tras confirmar plazas'}</p>
+                      </div>
+                    </div>
 
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  {canStart && (
-                    <button
-                      type="button"
-                      onClick={() => setStartTableId(table.id)}
-                      className="rounded-full border border-primary/50 px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10"
-                    >
-                      Iniciar partida
-                    </button>
-                  )}
-                  {canFinish && (
-                    <button
-                      type="button"
-                      onClick={() => setFinishTableId(table.id)}
-                      className="rounded-full bg-secondary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-secondary/80"
-                    >
-                      Finalizar partida
-                    </button>
-                  )}
-                  {canCancel && (
-                    <button
-                      type="button"
-                      onClick={() => handleCancelTable(table.id)}
-                      disabled={pendingCancelId === table.id}
-                      className="rounded-full border border-error/40 px-4 py-2 text-sm font-semibold text-error transition-colors hover:bg-error/10 disabled:cursor-not-allowed disabled:border-error/20 disabled:text-error/60"
-                    >
-                      {pendingCancelId === table.id ? 'Cancelando...' : 'Cancelar mesa'}
-                    </button>
-                  )}
-                </div>
+                    {table.status === 'in-progress' && (
+                      <div className="rounded-2xl border border-secondary/30 bg-secondary/10 px-4 py-3 text-sm text-text-secondary">
+                        <p className="font-semibold text-text-primary">Partida en juego</p>
+                        <p>
+                          Jugadores: {currentPlayersNodes}
+                        </p>
+                        {startedLabel && <p>Inicio: {startedLabel}</p>}
+                      </div>
+                    )}
 
-                <TableChat
-                  tableId={table.id}
-                  currentUserName={userDisplayName}
-                  currentUserId={user?.uid ?? null}
-                  canUsePrivateChannel={table.joined}
-                  className="mt-3"
-                />
-              </article>
-            )
-          })}
-        </section>
-      )}
+                    {table.status === 'completed' && (
+                      <div className="space-y-2 rounded-2xl border border-emerald-300/60 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                        <p className="font-semibold">Resultado registrado</p>
+                        <p>{table.resultSummary ?? 'Partida finalizada sin resumen.'}</p>
+                        {completionLabel && <p className="text-xs text-emerald-800/80">Cierre: {completionLabel}</p>}
+                        {Object.keys(table.chronicles).length > 0 && (
+                          <div className="space-y-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800/90">Crónicas</p>
+                            {Object.entries(table.chronicles).map(([player, chronicle]) => (
+                              <div key={`${table.id}-chronicle-${player}`} className="rounded-xl bg-white/70 px-3 py-2 text-xs text-emerald-900">
+                                <p className="font-semibold text-emerald-800">{player}</p>
+                                <p>{chronicle}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
-      {startTargetTable && (
-        <StartTableDialog
-          table={startTargetTable}
-          pending={pendingStartId === startTargetTable.id}
-          busyPlayerUids={busyPlayerUids}
-          onConfirm={async (payload) => {
-            await confirmStart(startTargetTable.id, payload)
-          }}
-          onDismiss={() => setStartTableId(null)}
-        />
-      )}
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {canStart && (
+                        <button
+                          type="button"
+                          onClick={() => setStartTableId(table.id)}
+                          className="rounded-full border border-primary/50 px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10"
+                        >
+                          Iniciar partida
+                        </button>
+                      )}
+                      {canFinish && (
+                        <button
+                          type="button"
+                          onClick={() => setFinishTableId(table.id)}
+                          className="rounded-full bg-secondary px-4 py-2 text-sm font-semibold text-white shadow-card transition-colors hover:bg-secondary/80"
+                        >
+                          Finalizar partida
+                        </button>
+                      )}
+                      {canCancel && (
+                        <button
+                          type="button"
+                          onClick={() => handleCancelTable(table.id)}
+                          disabled={pendingCancelId === table.id}
+                          className="rounded-full border border-error/40 px-4 py-2 text-sm font-semibold text-error transition-colors hover:bg-error/10 disabled:cursor-not-allowed disabled:border-error/20 disabled:text-error/60"
+                        >
+                          {pendingCancelId === table.id ? 'Cancelando...' : 'Cancelar mesa'}
+                        </button>
+                      )}
+                    </div>
 
-      {finishTargetTable && (
-        <FinishTableDialog
-          table={finishTargetTable}
-          pending={pendingFinishId === finishTargetTable.id}
-          onConfirm={async (payload) => {
-            await confirmFinish(finishTargetTable.id, payload)
-          }}
-          onDismiss={() => setFinishTableId(null)}
-        />
-      )}
+                    <TableChat
+                      tableId={table.id}
+                      currentUserName={userDisplayName}
+                      currentUserId={user?.uid ?? null}
+                      canUsePrivateChannel={table.joined}
+                      className="mt-3"
+                    />
+                  </article>
+                )
+              })}
+            </section>
+          )}
+
+          {startTargetTable && (
+            <StartTableDialog
+              table={startTargetTable}
+              pending={pendingStartId === startTargetTable.id}
+              busyPlayerUids={busyPlayerUids}
+              onConfirm={async (payload) => {
+                await confirmStart(startTargetTable.id, payload)
+              }}
+              onDismiss={() => setStartTableId(null)}
+            />
+          )}
+
+          {finishTargetTable && (
+            <FinishTableDialog
+              table={finishTargetTable}
+              pending={pendingFinishId === finishTargetTable.id}
+              onConfirm={async (payload) => {
+                await confirmFinish(finishTargetTable.id, payload)
+              }}
+              onDismiss={() => setFinishTableId(null)}
+            />
+          )}
+        </div>
+
+        {/* Sidebar: Player Radar (1 column on desktop) */}
+        <div className="lg:col-span-1 space-y-6">
+          <PlayerRadar />
+        </div>
+      </div>
     </div>
   )
 }
