@@ -757,7 +757,7 @@ export function Library() {
                   Registrar partida
                 </button>
 
-                {selectedGame.status === 'available' ? (
+                {selectedGame.status === 'available' && (
                   <button
                     onClick={() => handleBorrow(selectedGame)}
                     disabled={processingGameId === selectedGame.id}
@@ -766,6 +766,7 @@ export function Library() {
                     {processingGameId === selectedGame.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BookmarkCheck className="h-3.5 w-3.5" />}
                     SACAR JUEGO
                   </button>
+                )}
                 {selectedGame.status === 'borrowed' && (
                   <button
                     onClick={() => handleReturn(selectedGame)}
