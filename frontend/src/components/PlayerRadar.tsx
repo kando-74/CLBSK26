@@ -46,15 +46,21 @@ export const PlayerRadar: React.FC = () => {
         return users.find(u => u.uid === user.uid)
     }, [users, user])
 
-    const isAvailable = myProfile?.availableToPlay ?? false
+    const isAvailable = myProfile?.radarMode === 'auto' ? true : (myProfile?.availableToPlay ?? false)
     const currentNote = myProfile?.availabilityNote
+    const radarMode = myProfile?.radarMode ?? 'manual'
 
     async function handleToggleAvailability() {
-        if (!user) return
+        if (!user || !myProfile) return
         setUpdating(true)
         try {
-            // Toggle opposite of current state
-            await updateUserStatus(user.uid, !isAvailable, currentNote)
+            const currentlyEffectiveAvailable = radarMode === 'auto' ? true : (myProfile.availableToPlay ?? false)
+            const nextAvailable = !currentlyEffectiveAvailable
+
+            // If we are in 'auto' and want to go 'off', we MUST switch to 'manual'
+            const nextMode = (radarMode === 'auto' && !nextAvailable) ? 'manual' : radarMode
+
+            await updateUserStatus(user.uid, nextAvailable, currentNote, nextMode)
         } finally {
             setUpdating(false)
         }

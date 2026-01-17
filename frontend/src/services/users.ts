@@ -82,6 +82,7 @@ export async function updateUserStatus(
   userId: string,
   available: boolean,
   note?: string,
+  radarMode?: 'manual' | 'auto',
 ): Promise<{ status: 'success' | 'error'; message?: string }> {
   try {
     const { doc, setDoc, getDoc } = await import('firebase/firestore')
@@ -99,6 +100,7 @@ export async function updateUserStatus(
           ...currentPreferences,
           availableToPlay: available,
           availabilityNote: note ?? currentPreferences.availabilityNote ?? '',
+          radarMode: radarMode ?? currentPreferences.radarMode ?? 'manual',
         }
       },
       { merge: true }
