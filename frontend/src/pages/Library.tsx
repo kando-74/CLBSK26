@@ -766,10 +766,10 @@ export function Library() {
                     {processingGameId === selectedGame.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BookmarkCheck className="h-3.5 w-3.5" />}
                     SACAR JUEGO
                   </button>
-                ) : (
+                {selectedGame.status === 'borrowed' && (
                   <button
                     onClick={() => handleReturn(selectedGame)}
-                    disabled={processingGameId === selectedGame.id}
+                    disabled={processingGameId === selectedGame.id || (!userId ? true : (userId !== selectedGame.ownerId && userId !== selectedGame.borrowedBy?.uid))}
                     className="inline-flex items-center gap-2 rounded-full bg-slate-200 px-4 py-1 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-300 disabled:opacity-50"
                   >
                     {processingGameId === selectedGame.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BookmarkCheck className="h-3.5 w-3.5" />}
