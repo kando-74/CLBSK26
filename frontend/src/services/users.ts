@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { collection, getDocs } from 'firebase/firestore'
+import { collection, onSnapshot } from 'firebase/firestore'
 import { db } from '../utils/firebase'
 
 export type UserProfile = {
@@ -24,33 +24,35 @@ type UseUsersState = {
 
 const usersCollectionRef = collection(db, 'users')
 
-async function listUsers(): Promise<UserProfile[]> {
-  try {
-    const snapshot = await getDocs(usersCollectionRef)
-    if (snapshot.empty) {
-      return []
-    }
+// listUsers removed in favor of subscribeUsers
 
-    return snapshot.docs.map((doc) => {
-      const data = doc.data()
-      return {
-        uid: doc.id,
-        alias: data.alias ?? 'Sin alias',
-        fullName: data.fullName ?? '',
-        email: data.email ?? 'Sin correo',
-        role: data.role ?? 'participante',
-        availableToPlay: data.preferences?.availableToPlay ?? false,
-        playStyleTags: data.preferences?.playStyleTags ?? [],
-        avatarUrl: data.preferences?.avatarUrl,
-        availabilityNote: data.preferences?.availabilityNote ?? '',
-        interestTags: data.preferences?.interestTags ?? [],
-        radarMode: data.preferences?.radarMode ?? 'manual',
-      } as UserProfile
-    })
-  } catch (error) {
-    console.error('Error fetching users:', error)
-    throw new Error('No se pudo obtener la lista de usuarios.')
-  }
+export function subscribeUsers(onUpdate: (users: UserProfile[]) => void, onError: (error: Error) => void) {
+  return onSnapshot(
+    usersCollectionRef,
+    (snapshot) => {
+      const users = snapshot.docs.map((doc) => {
+        const data = doc.data()
+        return {
+          uid: doc.id,
+          alias: data.alias ?? 'Sin alias',
+          fullName: data.fullName ?? '',
+          email: data.email ?? 'Sin correo',
+          role: data.role ?? 'participante',
+          availableToPlay: data.preferences?.availableToPlay ?? false,
+          playStyleTags: data.preferences?.playStyleTags ?? [],
+          avatarUrl: data.avatarUrl,
+          availabilityNote: data.preferences?.availabilityNote ?? '',
+          interestTags: data.preferences?.interestTags ?? [],
+          radarMode: data.preferences?.radarMode ?? 'manual',
+        } as UserProfile
+      })
+      onUpdate(users)
+    },
+    (error) => {
+      console.error('Error subscribing to users:', error)
+      onError(new Error('No se pudo suscribir a la lista de usuarios.'))
+    }
+  )
 }
 
 export function useUsers(): UseUsersState {
@@ -61,23 +63,16 @@ export function useUsers(): UseUsersState {
   })
 
   useEffect(() => {
-    let cancelled = false
+    const unsubscribe = subscribeUsers(
+      (users) => {
+        setState({ users, loading: false, error: null })
+      },
+      (error) => {
+        setState({ users: [], loading: false, error: error.message })
+      }
+    )
 
-    listUsers()
-      .then((users) => {
-        if (!cancelled) {
-          setState({ users, loading: false, error: null })
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setState({ users: [], loading: false, error: error.message })
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
+    return unsubscribe
   }, [])
 
   return state

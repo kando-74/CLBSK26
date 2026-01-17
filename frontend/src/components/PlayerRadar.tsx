@@ -82,7 +82,7 @@ export const PlayerRadar: React.FC = () => {
                         <div className="flex-1">
                             <h3 className="font-semibold text-text-primary flex items-center gap-2">
                                 <div
-                                    className={`w - 2.5 h - 2.5 rounded - full ${isAvailable ? 'bg-success shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-text-disabled'} `}
+                                    className={`w-2.5 h-2.5 rounded-full ${isAvailable ? 'bg-success shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-text-disabled'}`}
                                 />
                                 Mi Estado: {isAvailable ? 'Disponible' : 'No disponible'}
                             </h3>
@@ -132,7 +132,7 @@ export const PlayerRadar: React.FC = () => {
                         <button
                             onClick={handleToggleAvailability}
                             disabled={updating}
-                            className={`transform transition - all active: scale - 95 ${updating ? 'opacity-50' : ''} `}
+                            className={`transform transition-all active:scale-95 ${updating ? 'opacity-50' : ''}`}
                         >
                             {isAvailable ? (
                                 <ToggleRight className="w-10 h-10 text-success" />
